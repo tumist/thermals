@@ -286,12 +286,14 @@ class GraphCanvas(Gtk.DrawingArea):
         for line in y_lines:
             c.set_source_rgb(*fg_color)
             c.set_line_width(1)
+            c.set_dash([5, 10], 5)
             c.move_to(0, translate_y(line))
             c.show_text("{} {}".format(line, self.unit))
             c.line_to(w, translate_y(line))
             c.stroke()
 
         # Draw sensors
+        c.set_dash([])
         for sensor in sensors:
             history = list(islice(self.history[sensor], 0, x_max))
             hiter = enumerate(history)
