@@ -3,6 +3,7 @@ from collections import deque, defaultdict
 from itertools import islice, takewhile, dropwhile, count, batched
 from statistics import mean
 from time import monotonic_ns
+from enum import Enum
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -10,6 +11,20 @@ from gi.repository import Gtk, Adw, GObject, Gio, GLib, Gdk
 import configparser
 import glob
 from os.path import basename
+
+class Unit(Enum):
+    CELCIUS = 0
+    RPM = 1
+
+    def __str__(self):
+        match self:
+            case Unit.CELCIUS: return "°C"
+            case Unit.RPM: return "RPM"
+
+    def graph_lines(self):
+        match self:
+            case Unit.RPM: return 250
+            case Unit.CELCIUS: return 10
 
 class Config(configparser.ConfigParser):
     filename = "thermals.ini"
@@ -32,7 +47,7 @@ class Sensor(GObject.Object):
     valueStr = GObject.Property(type=str)
     graph = GObject.Property(type=bool, default=False)
     color = GObject.Property(type=Gdk.RGBA)
-    unit = GObject.Property(type=str, default="°C")
+    unit = GObject.Property(type=int)
 
     def __init__(self, name, get_value, config, unit=None):
         super().__init__()
@@ -40,7 +55,7 @@ class Sensor(GObject.Object):
         self.get_value = get_value
         self.config = config
         if unit:
-            self.unit = unit
+            self.unit = unit.value
 
         self.color = Gdk.RGBA()
         self.color.parse(config['color'])
@@ -52,7 +67,10 @@ class Sensor(GObject.Object):
         self.connect('notify::graph', self.on_graph)
     
     def format_valueStr(self):
-        self.valueStr = "{:.1f}{}".format(self.value, self.unit)
+        if type(self.value) == float:
+            self.valueStr = "{:.1f} {}".format(self.value, Unit(self.unit))
+        else:
+            self.valueStr = "{} {}".format(self.value, Unit(self.unit))
     
     def refresh(self):
         value = self.get_value()
@@ -74,7 +92,6 @@ class Sensor(GObject.Object):
     #     rgba = Gdk.RGBA()
     #     rgba.parse(color)
     #     self.set_color_rgba(rgba)
-
 
 class HwmonDevice(Gtk.Expander):
     def __init__(self, dir, config):
@@ -167,7 +184,7 @@ class HwmonDevice(Gtk.Expander):
             yield Sensor(name,
                          keepFd("{}/{}".format(self.dir, fan), func=int),
                          self.config["{}:{}".format(self.name, name)],
-                         unit="RPM")
+                         unit=Unit.RPM)
     
     def refresh(self):
         for item in self.store:
@@ -177,11 +194,13 @@ class HwmonDevice(Gtk.Expander):
         self.config_section['expanded'] = str(self.get_property('expanded'))
         self.config.write()
 
-    def get_graph_sensors(self):
+    def get_sensors(self, graph : bool | None = None, unit : int | None = None):
         for item in self.store:
-            if item.graph:
-                yield item
-
+            if graph != None and item.graph != graph:
+                continue
+            if unit != None and item.unit != unit:
+                continue
+            yield item
 
 class Hwmon(Gtk.Box):
     def __init__(self, config):
@@ -198,44 +217,22 @@ class Hwmon(Gtk.Box):
         for dev in self.devices:
             dev.refresh()
 
-    def get_graph_sensors(self):
+    def get_sensors(self, **kw):
         for dev in self.devices:
-            for sensor in dev.store:
-                if sensor.graph:
-                    yield sensor
+            for sensor in dev.get_sensors(**kw):
+                yield sensor
 
-class Graph(Gtk.Box):
-    timeSelections = [
-        ("5 mins", 60 * 5),
-        ("15 mins", 60 * 15),
-        ("30 mins", 60 * 30),
-        ("1 hour", 60 * 60),
-        ("3 hours", 60 * 60 * 3)
-    ]
-    graphSeconds = timeSelections[0][1]
+class GraphCanvas(Gtk.DrawingArea):
     drawDark = GObject.Property(type=bool, default=False)
+    graphSeconds = GObject.Property(type=int)
 
-    def __init__(self, config, sensors):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+    def __init__(self, unit, sensors):
+        super().__init__(hexpand=True, vexpand=True)
+        self.unit = unit
         self.sensors = sensors
-        self.history = defaultdict(lambda: deque([]))
 
-        self.drawing = Gtk.DrawingArea(hexpand=True, vexpand=True)
-        self.drawing.set_draw_func(self.draw, None)
-        self.append(self.drawing)
+        self.set_draw_func(self.draw, None)
 
-        timeselector = Gtk.DropDown.new_from_strings(
-            [s for (s, _) in self.timeSelections]
-        )
-        timeselector.connect("notify::selected", self.on_time_selected)
-        self.append(timeselector)
-
-
-    def on_time_selected(self, dropdown, _):
-        selected = dropdown.get_property("selected")
-        self.graphSeconds = self.timeSelections[selected][1]
-        self.drawing.queue_draw()
-        
     def draw(self, area, c, w, h, data):
         if self.drawDark:
             bg_color = (0.1, 0.1, 0.1)
@@ -248,9 +245,25 @@ class Graph(Gtk.Box):
         c.set_source_rgb(*bg_color)
         c.paint()
 
-        sensors = list(self.sensors.get_graph_sensors())
+        sensors = list(self.sensors.get_sensors(graph=True, unit=self.unit.value))
         if not sensors:
+            print("GraphCanvas {} has nothing to draw".format(self.unit))
             return
+
+        #x_min = 0
+        x_max = self.graphSeconds
+        
+        if self.unit == Unit.RPM:
+            y_min = 0
+        else:
+            y_min = min([min(self.history[s]) for s in sensors])
+        y_max = max([max(self.history[s]) for s in sensors])
+        # Add 5% on max and min
+        y_min -= (y_max-y_min)*0.05
+        y_max += (y_max-y_min)*0.05
+
+        if y_min == y_max:
+            y_max += 1
 
         # Temp -> x 
         def translate_x(value: float) -> float:
@@ -262,26 +275,23 @@ class Graph(Gtk.Box):
         def translate_y(value: float) -> float:
             return h * (1 - ((value - y_min) / (y_max - y_min)))
 
-        #x_min = 0
-        x_max = self.graphSeconds
-        
-        y_min = min([min(self.history[s]) for s in sensors])
-        y_max = max([max(self.history[s]) for s in sensors])
-        # Add 5% on max and min
-        y_min -= (y_max-y_min)*0.05
-        y_max += (y_max-y_min)*0.05
-
+        # Draw background lines
         c.select_font_face("Sans")
         c.set_font_size(16)
-        y_lines = takewhile(lambda v: v < y_max, dropwhile(lambda v: v < y_min, count(0, 10)))
+        y_lines = list(takewhile(lambda v: v <= y_max, 
+                    dropwhile(lambda v: v < y_min, 
+                        count(0, self.unit.graph_lines()))))
+        while h / len(y_lines) < 35:
+            y_lines = y_lines[::2]
         for line in y_lines:
             c.set_source_rgb(*fg_color)
             c.set_line_width(1)
             c.move_to(0, translate_y(line))
-            c.show_text("{}°".format(line))
+            c.show_text("{} {}".format(line, self.unit))
             c.line_to(w, translate_y(line))
             c.stroke()
 
+        # Draw sensors
         for sensor in sensors:
             history = list(islice(self.history[sensor], 0, x_max))
             hiter = enumerate(history)
@@ -294,10 +304,57 @@ class Graph(Gtk.Box):
             for i, v in hiter:
                 c.line_to(translate_x(i), translate_y(v))
             c.stroke()
+
+class Graphs(Gtk.Box):
+    timeSelections = [
+        ("5 mins", 60 * 5),
+        ("15 mins", 60 * 15),
+        ("30 mins", 60 * 30),
+        ("1 hour", 60 * 60),
+        ("3 hours", 60 * 60 * 3)
+    ]
+    graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
+    drawDark = GObject.Property(type=bool, default=False)
+
+    def __init__(self, config, sensors):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.sensors = sensors
+        self.history = defaultdict(lambda: deque([]))
+
+        paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL,
+                          wide_handle=True)
+
+        self.celcius = GraphCanvas(Unit.CELCIUS, self.sensors)
+        self.celcius.sensors = sensors
+        self.celcius.history = self.history
+        self.bind_property('graphSeconds', self.celcius, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
+        self.bind_property('drawDark', self.celcius, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
+        paned.set_start_child(self.celcius)
+
+        self.rpm = GraphCanvas(Unit.RPM, self.sensors)
+        self.rpm.history = self.history
+        self.bind_property('graphSeconds', self.rpm, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
+        self.bind_property('drawDark', self.rpm, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
+        paned.set_end_child(self.rpm)
+
+        timeselector = Gtk.DropDown.new_from_strings(
+            [s for (s, _) in self.timeSelections]
+        )
+        timeselector.connect("notify::selected", self.on_time_selected)
+
+        self.append(paned)
+        self.append(timeselector)
+
+    def on_time_selected(self, dropdown, _):
+        selected = dropdown.get_property("selected")
+        self.graphSeconds = self.timeSelections[selected][1]
+        self.celcius.queue_draw()
+        self.rpm.queue_draw()
     
     def refresh(self):
         self.remember_sensors()
-        self.drawing.queue_draw()
+        self.celcius.queue_draw()
+        self.rpm.queue_draw()
     
     def remember_sensors(self):
         for hwmon in self.sensors:
@@ -316,8 +373,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config['DEFAULT']['graph'] = 'False'
 
         self.sensors = Hwmon(self.config)
-        self.graph = Graph(self.config, self.sensors)
-        self.app.get_style_manager().bind_property('dark', self.graph, 'drawDark')
+        self.graph = Graphs(self.config, self.sensors)
+        self.app.get_style_manager().bind_property('dark', self.graph, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
         
         box = Gtk.Box()
         box.append(self.graph)
@@ -345,5 +402,6 @@ class MyApp(Adw.Application):
         self.win = MainWindow(application=app)
         self.win.present()
 
-app = MyApp(application_id="com.example.GtkApplication")
-app.run(sys.argv)
+if __name__ == "__main__":
+    app = MyApp(application_id="com.example.GtkApplication")
+    app.run(sys.argv)
