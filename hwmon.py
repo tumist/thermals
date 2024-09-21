@@ -1,6 +1,7 @@
 from gi.repository import Gtk, GObject, Gio
 import glob
 from os.path import basename
+from collections.abc import Iterator
 
 from utils import Unit, readStrip
 from sensor import Sensor
@@ -28,6 +29,11 @@ class Hwmon(Gtk.Box):
 class HwmonDevice(Gtk.Expander):
     def __init__(self, dir, config):
         self.name = basename(dir)
+        try:
+            hwmon_name = readStrip(dir + "/name")
+            self.name += " [" + hwmon_name + "]"
+        except FileNotFoundError:
+            pass
 
         self.config = config
         self.config_section = self.config[self.name]
@@ -41,7 +47,7 @@ class HwmonDevice(Gtk.Expander):
 
         # List Store
         store = Gio.ListStore(item_type=Sensor)
-        for sensor in self.sensors():
+        for sensor in self.find_sensors():
             store.append(sensor)
 
         # Selection model
@@ -86,13 +92,9 @@ class HwmonDevice(Gtk.Expander):
         self.store = store
         self.set_child(self.view)
     
-    def sensors(self):
-        def keepFd(path, func=lambda a: a):
-            fd = open(path, 'r')
-            def inner():
-                fd.seek(0)
-                return func(fd.readline())
-            return inner
+    def find_sensors(self) -> Iterator[Sensor]:
+        """Scans /sys/class/hwmon"""
+
         def readGio(path, func=lambda a: a):
             uri = Gio.File.new_for_path(path)
             def inner():
@@ -103,7 +105,6 @@ class HwmonDevice(Gtk.Expander):
             return float(inp) / 1000.0
         def convertInt(inp: str):
             return int(inp) / 100
-
 
         for temp in glob.glob("temp[0-9]_input", root_dir=self.dir):
             temp = temp.split('_')[0]
@@ -127,6 +128,10 @@ class HwmonDevice(Gtk.Expander):
         self.config.write()
 
     def get_sensors(self, graph : bool | None = None, unit : int | None = None):
+        """Return sensors using filters.
+        
+        No filters -> All sensors
+        """
         for item in self.store:
             if graph != None and item.graph != graph:
                 continue

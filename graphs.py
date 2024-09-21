@@ -121,7 +121,7 @@ class GraphCanvas(Gtk.DrawingArea):
         y_lines = list(takewhile(lambda v: v <= y_max, 
                     dropwhile(lambda v: v < y_min, 
                         count(0, self.unit.graph_lines()))))
-        while h / len(y_lines) < 35:
+        while y_lines and h / len(y_lines) < 35:
             y_lines = y_lines[::2]
         for line in y_lines:
             c.set_source_rgb(*fg_color)

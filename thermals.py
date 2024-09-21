@@ -4,7 +4,7 @@ from time import monotonic_ns
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GObject, Gio, GLib, Gdk
+from gi.repository import Gtk, Adw, GObject, GLib
 import configparser
 
 from graphs import Graphs
@@ -18,7 +18,8 @@ class Config(configparser.ConfigParser):
         with open(self.filename, 'w') as configfile:
             super().write(configfile)
     def __getitem__(self, section):
-        if not self.has_section(section) and not section == "DEFAULT":
+        if not self.has_section(section) and \
+           not section == "DEFAULT":
             self.add_section(section)
         section = super().__getitem__(section)
         # Monkeypatch a write method
@@ -38,11 +39,14 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self.sensors = Hwmon(self.config)
         self.graph = Graphs(self.config, self.sensors)
-        self.app.get_style_manager().bind_property('dark', self.graph, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
+        self.app.get_style_manager()\
+            .bind_property('dark', self.graph, 'drawDark',
+                           GObject.BindingFlags.SYNC_CREATE)
         
         box = Gtk.Box()
         box.append(self.graph)
-        box.append(Gtk.ScrolledWindow(child=self.sensors, hscrollbar_policy=Gtk.PolicyType.NEVER))
+        box.append(Gtk.ScrolledWindow(
+            child=self.sensors, hscrollbar_policy=Gtk.PolicyType.NEVER))
         self.set_child(box)
         self.set_default_size(900, 400)
         self.on_timer()
