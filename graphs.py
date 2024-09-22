@@ -15,11 +15,11 @@ class Graphs(Gtk.Box):
     ]
     graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     drawDark = GObject.Property(type=bool, default=False)
+    history = defaultdict(lambda: deque([]))
 
     def __init__(self, config, sensors):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.sensors = sensors
-        self.history = defaultdict(lambda: deque([]))
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL,
                           wide_handle=True)
@@ -52,14 +52,13 @@ class Graphs(Gtk.Box):
         self.rpm.queue_draw()
     
     def refresh(self):
-        self.remember_sensors()
+        self.historize_sensors()
         self.celcius.queue_draw()
         self.rpm.queue_draw()
     
-    def remember_sensors(self):
-        for hwmon in self.sensors:
-            for sensor in hwmon.store:
-                self.history[sensor].insert(0, sensor.value)
+    def historize_sensors(self):
+        for sensor in self.sensors.get_sensors():
+            self.history[sensor].insert(0, sensor.value)
 
 
 class GraphCanvas(Gtk.DrawingArea):
@@ -131,9 +130,9 @@ class GraphCanvas(Gtk.DrawingArea):
             c.show_text("{} {}".format(line, self.unit))
             c.line_to(w, translate_y(line))
             c.stroke()
+        c.set_dash([])
 
         # Draw sensors
-        c.set_dash([])
         for sensor in sensors:
             history = list(islice(self.history[sensor], 0, x_max))
             hiter = enumerate(history)

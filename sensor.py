@@ -1,11 +1,14 @@
 from gi.repository import GObject, Gdk
 
-from utils import Unit
+from time import monotonic_ns
+
+from utils import Unit, monotonic_s
 
 class Sensor(GObject.Object):
     name = GObject.Property(type=str)
-    #value = GObject.Property(type=float)
+    #value = GObject.Property(type=int)
     valueStr = GObject.Property(type=str)
+    time = GObject.Property(type=int)
     graph = GObject.Property(type=bool, default=False)
     color = GObject.Property(type=Gdk.RGBA)
     unit = GObject.Property(type=int)
@@ -34,8 +37,12 @@ class Sensor(GObject.Object):
             self.valueStr = "{} {}".format(self.value, Unit(self.unit))
     
     def refresh(self):
+        t0 = monotonic_ns()
         self.value = self.get_value()
+        self.time = monotonic_s()
         self.format_valueStr()
+        t1 = monotonic_ns()
+        #print("Sensor {} refresh took {} ns".format(self.name, t1-t0))
     
     def set_color_rgba(self, color: Gdk.RGBA):
         self.color = color
