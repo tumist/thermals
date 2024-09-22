@@ -3,7 +3,7 @@ from itertools import islice, takewhile, dropwhile, count, batched
 
 from gi.repository import Gtk, GObject
 
-from utils import Unit
+from utils import Unit, monotonic_s
 
 class Graphs(Gtk.Box):
     timeSelections = [
@@ -58,8 +58,13 @@ class Graphs(Gtk.Box):
     
     def historize_sensors(self):
         for sensor in self.sensors.get_sensors():
-            self.history[sensor].insert(0, sensor.value)
+            self.history[sensor].insert(0, (sensor.time, sensor.value))
 
+# history helpers
+def values(seq):
+    for dq in seq:
+        for (t,v) in dq:
+            yield v
 
 class GraphCanvas(Gtk.DrawingArea):
     drawDark = GObject.Property(type=bool, default=False)
@@ -86,17 +91,18 @@ class GraphCanvas(Gtk.DrawingArea):
 
         sensors = list(self.sensors.get_sensors(graph=True, unit=self.unit.value))
         if not sensors:
-            print("GraphCanvas {} has nothing to draw".format(self.unit))
+            print("GraphCanvas {} has no sensors to draw".format(self.unit))
             return
 
-        #x_min = 0
-        x_max = self.graphSeconds
+        t_min = monotonic_s() - self.graphSeconds
+        t_max = monotonic_s()
         
         if self.unit == Unit.RPM:
             y_min = 0
         else:
-            y_min = min([min(self.history[s]) for s in sensors])
-        y_max = max([max(self.history[s]) for s in sensors])
+            y_min = min(values([self.history[s] for s in sensors]))
+        y_max = max(values([self.history[s] for s in sensors]))
+
         # Add 5% on max and min
         y_min -= (y_max-y_min)*0.05
         y_max += (y_max-y_min)*0.05
@@ -104,13 +110,11 @@ class GraphCanvas(Gtk.DrawingArea):
         if y_min == y_max:
             y_max += 1
 
-        # Temp -> x 
-        def translate_x(value: float) -> float:
-            # 0 = w
-            # grapSeconds = 0
-            return w * (x_max - value) / (x_max)
+        # Time -> x coord
+        def translate_x(time: float) -> float:
+            return w * ((time - t_min) / (t_max - t_min))
         
-        # Time index -> y
+        # Sensor value -> y coord
         def translate_y(value: float) -> float:
             return h * (1 - ((value - y_min) / (y_max - y_min)))
 
@@ -132,16 +136,16 @@ class GraphCanvas(Gtk.DrawingArea):
             c.stroke()
         c.set_dash([])
 
+
         # Draw sensors
         for sensor in sensors:
-            history = list(islice(self.history[sensor], 0, x_max))
-            hiter = enumerate(history)
+            hiter = dropwhile(lambda h: h[0] < t_min, self.history[sensor])
 
             c.set_source_rgb(*sensor.RGB_triple())
             c.set_line_width(2)
-            i0, v0 = next(hiter)
+            t0, v0 = next(hiter)
             
-            c.move_to(translate_x(i0), translate_y(v0))
-            for i, v in hiter:
-                c.line_to(translate_x(i), translate_y(v))
+            c.move_to(translate_x(t0), translate_y(v0))
+            for (t, v) in hiter:
+                c.line_to(translate_x(t), translate_y(v))
             c.stroke()
