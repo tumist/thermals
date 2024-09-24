@@ -52,16 +52,12 @@ class MainWindow(Gtk.ApplicationWindow):
         self.on_timer()
 
     def on_timer(self):
-        GLib.timeout_add(1000, self.on_timer)
+        GLib.timeout_add(2000, self.on_timer)
         t0 = monotonic_ns()
         self.sensors.refresh()
         t1 = monotonic_ns()
         self.graph.refresh()
-        t2 = monotonic_ns()
-        # print("Sensor refresh took {:1.0f}ms, Graph took {:1.0f}ms"
-        #       .format((t1-t0)/1000000, (t2-t1)/1000000))
-        print("Sensor refresh took {:1.1f}ms, Graph took {:1.1f}ms"
-               .format((t1-t0)/1000000, (t2-t1)/1000000))
+        print("Sensor refresh took {:1.1f}ms".format((t1-t0)/1000000))
 
 class MyApp(Adw.Application):
     def __init__(self, **kwargs):

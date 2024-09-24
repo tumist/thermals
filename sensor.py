@@ -30,6 +30,9 @@ class Sensor(GObject.Object):
 
         self.connect('notify::graph', self.on_graph)
     
+    def __repr__(self):
+        return "Sensor {} {}{}".format(self.name, self.valueStr, self.unit)
+    
     def format_valueStr(self):
         if type(self.value) == float:
             self.valueStr = "{:.1f} {}".format(self.value, Unit(self.unit))
