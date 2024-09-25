@@ -1,10 +1,14 @@
 from gi.repository import Gtk, GObject, Gio
-import glob
+import glob # TODO: Use regexp
 from os.path import basename
+import os.path
 from collections.abc import Iterator
 
-from utils import Unit, readStrip
+from utils import Unit, readStrip, readGio
 from sensor import Sensor
+
+def convertTemp(inp: str):
+    return float(inp) / 1000.0
 
 class Hwmon(Gtk.Box):
     def __init__(self, config):
@@ -95,33 +99,15 @@ class HwmonDevice(Gtk.Expander):
     def find_sensors(self) -> Iterator[Sensor]:
         """Scans /sys/class/hwmon"""
 
-        def readGio(path, func=lambda a: a):
-            uri = Gio.File.new_for_path(path)
-            def inner():
-                status, contents, etag_out = Gio.File.load_contents(uri)
-                return func(contents.strip())
-            return inner
-        def convertTemp(inp: str):
-            return float(inp) / 1000.0
-        def convertInt(inp: str):
-            return int(inp) / 100
-
         for temp in glob.glob("temp[0-9]_input", root_dir=self.dir):
-            temp = temp.split('_')[0]
-            try:
-                label = readStrip("{}/{}_label".format(self.dir, temp))
-            except FileNotFoundError:
-                label = temp
-            yield Sensor(label,
-                         readGio("{}/{}_input".format(self.dir, temp), func=convertTemp),
-                         self.config["{}:{}".format(self.name, temp)])
+            name = temp.split('_')[0]
+            cfg = self.config["{}:{}".format(self.name, name)]
+            yield Temperature(self, name, cfg)
         
         for fan in glob.glob("fan[0-9]_input", root_dir=self.dir):
             name = fan.split('_')[0]
-            yield Sensor(name,
-                         readGio("{}/{}".format(self.dir, fan), func=int),
-                         self.config["{}:{}".format(self.name, name)],
-                         unit=Unit.RPM)
+            cfg = self.config["{}:{}".format(self.name, name)]
+            yield Fan(self, name, cfg)
     
     def on_expanded(self, *a):
         self.config_section['expanded'] = str(self.get_property('expanded'))
@@ -138,3 +124,40 @@ class HwmonDevice(Gtk.Expander):
             if unit != None and item.unit != unit:
                 continue
             yield item
+
+class HwmonSensor(Sensor):
+    def __init__(self, device, measurement, config):
+        self.device = device
+        self.measurement = measurement
+        super().__init__(measurement, config)
+    
+    def format_valueStr(self):
+        self.valueStr = self.format()
+
+class Temperature(HwmonSensor):
+    unit = Unit.CELCIUS.value
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        try:
+            label = readStrip(os.path.join(self.device.dir, self.measurement + "_label"))
+            self.name = label
+        except FileNotFoundError:
+            pass
+
+    def get_value(self):
+        return convertTemp(readStrip(
+            os.path.join(self.device.dir, self.measurement + "_input")))
+    
+    def format(self):
+        return "{:.1f}{}".format(self.value, Unit(self.unit))
+
+class Fan(HwmonSensor):
+    unit = Unit.RPM.value
+
+    def get_value(self):
+        return int(readStrip(
+            os.path.join(self.device.dir, self.measurement + "_input")))
+    
+    def format(self):
+        return "{} {}".format(self.value, Unit(self.unit))

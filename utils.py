@@ -1,3 +1,4 @@
+from gi.repository import Gio
 from enum import Enum
 from time import monotonic_ns
 
@@ -21,3 +22,10 @@ def readStrip(path: str) -> str:
 
 def monotonic_s() -> int:
     return monotonic_ns() // 1000000000
+
+def readGio(path, func=lambda x: x):
+    uri = Gio.File.new_for_path(path)
+    def inner():
+        status, contents, etag_out = Gio.File.load_contents(uri)
+        return func(contents.strip())
+    return inner

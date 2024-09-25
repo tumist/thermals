@@ -8,7 +8,7 @@ from time import monotonic_ns
 
 class Graphs(Gtk.Box):
     timeSelections = [
-        ("30 sec", 30),
+        ("1 min", 60),
         ("5 mins", 60 * 5),
         ("15 mins", 60 * 15),
         ("30 mins", 60 * 30),
@@ -17,7 +17,7 @@ class Graphs(Gtk.Box):
     ]
     graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     drawDark = GObject.Property(type=bool, default=False)
-    history = defaultdict(lambda: deque([], 60 * 60))
+    history = defaultdict(lambda: deque([], 60 * 60 * 2))
 
     def __init__(self, config, sensors):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
@@ -161,8 +161,8 @@ class GraphCanvas(Gtk.DrawingArea):
         # Draw sensors
         c.set_line_width(2)
         for sensor in sensors:
-            hiter = dropwhile(lambda h: h[0] < t_min, self.history[sensor])
-            #hiter = takewhile(lambda h: h[0] > t_min, self.history[sensor])
+            #hiter = dropwhile(lambda h: h[0] < t_min, self.history[sensor])
+            hiter = takewhile(lambda h: h[0] > t_min, reversed(self.history[sensor]))
 
             c.set_source_rgb(*sensor.RGB_triple())
             t0, v0 = next(hiter)

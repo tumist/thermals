@@ -13,19 +13,16 @@ class Sensor(GObject.Object):
     color = GObject.Property(type=Gdk.RGBA)
     unit = GObject.Property(type=int)
 
-    def __init__(self, name, get_value, config, unit=None):
+    def __init__(self, name, config):
         super().__init__()
         self.name = name
-        self.get_value = get_value
         self.config = config
-        if unit:
-            self.unit = unit.value
 
         self.color = Gdk.RGBA()
         self.color.parse(config['color'])
         self.graph = config.getboolean('graph')
 
-        self.value = get_value()
+        self.value = self.get_value()
         self.format_valueStr()
 
         self.connect('notify::graph', self.on_graph)
@@ -33,18 +30,18 @@ class Sensor(GObject.Object):
     def __repr__(self):
         return "Sensor {} {}{}".format(self.name, self.valueStr, self.unit)
     
+    def get_value(self):
+        raise NotImplementedError
+    
     def format_valueStr(self):
-        if type(self.value) == float:
-            self.valueStr = "{:.1f} {}".format(self.value, Unit(self.unit))
-        else:
-            self.valueStr = "{} {}".format(self.value, Unit(self.unit))
+        raise NotImplementedError
     
     def refresh(self):
-        t0 = monotonic_ns()
+        #t0 = monotonic_ns()
         self.value = self.get_value()
         self.time = monotonic_s()
         self.format_valueStr()
-        t1 = monotonic_ns()
+        #t1 = monotonic_ns()
         #print("Sensor {} refresh took {} ns".format(self.name, t1-t0))
     
     def set_color_rgba(self, color: Gdk.RGBA):
