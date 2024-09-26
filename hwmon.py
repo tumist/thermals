@@ -33,14 +33,16 @@ class Hwmon(Gtk.Box):
 class HwmonDevice(Gtk.Expander):
     def __init__(self, dir, config):
         self.name = basename(dir)
+        self.id = basename(dir)
         try:
             hwmon_name = readStrip(dir + "/name")
             self.name += " [" + hwmon_name + "]"
+            self.id += ":" + hwmon_name
         except FileNotFoundError:
             pass
 
         self.config = config
-        self.config_section = self.config[self.name]
+        self.config_section = self.config[self.id]
         self.config_section.write()
         super().__init__(label=self.name,
                          expanded=self.config_section.getboolean('expanded'),
@@ -101,12 +103,12 @@ class HwmonDevice(Gtk.Expander):
 
         for temp in glob.glob("temp[0-9]_input", root_dir=self.dir):
             name = temp.split('_')[0]
-            cfg = self.config["{}:{}".format(self.name, name)]
+            cfg = self.config["{}:{}".format(self.id, name)]
             yield Temperature(self, name, cfg)
         
         for fan in glob.glob("fan[0-9]_input", root_dir=self.dir):
             name = fan.split('_')[0]
-            cfg = self.config["{}:{}".format(self.name, name)]
+            cfg = self.config["{}:{}".format(self.id, name)]
             yield Fan(self, name, cfg)
     
     def on_expanded(self, *a):
