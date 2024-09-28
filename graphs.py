@@ -8,12 +8,11 @@ from time import monotonic_ns
 
 class Graphs(Gtk.Box):
     timeSelections = [
-        ("1 min", 60),
-        ("5 mins", 60 * 5),
-        ("15 mins", 60 * 15),
+        ("3 mins", 60 * 3),
+        ("10 mins", 60 * 10),
         ("30 mins", 60 * 30),
         ("1 hour", 60 * 60),
-        ("3 hours", 60 * 60 * 3)
+        ("3 hours", 60 * 60 * 3),
     ]
     graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     drawDark = GObject.Property(type=bool, default=False)
@@ -22,29 +21,34 @@ class Graphs(Gtk.Box):
     def __init__(self, config, sensors):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.sensors = sensors
-
-        paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL,
-                          wide_handle=True)
+        
+        paned = MultiPaned()
 
         self.celcius = GraphCanvas(Unit.CELCIUS, self.sensors)
         self.celcius.sensors = sensors
         self.celcius.history = self.history
         self.bind_property('graphSeconds', self.celcius, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
         self.bind_property('drawDark', self.celcius, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
-        paned.set_start_child(self.celcius)
+        paned.append(self.celcius)
 
         self.rpm = GraphCanvas(Unit.RPM, self.sensors)
         self.rpm.history = self.history
         self.bind_property('graphSeconds', self.rpm, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
         self.bind_property('drawDark', self.rpm, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
-        paned.set_end_child(self.rpm)
+        paned.append(self.rpm)
+
+        self.pwm = GraphCanvas(Unit.PWM, self.sensors)
+        self.pwm.history = self.history
+        self.bind_property('graphSeconds', self.pwm, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
+        self.bind_property('drawDark', self.pwm, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
+        paned.append(self.pwm)
 
         timeselector = Gtk.DropDown.new_from_strings(
             [s for (s, _) in self.timeSelections]
         )
         timeselector.connect("notify::selected", self.on_time_selected)
 
-        self.append(paned)
+        self.append(Gtk.ScrolledWindow(child=paned))
         self.append(timeselector)
 
     def on_time_selected(self, dropdown, _):
@@ -57,10 +61,27 @@ class Graphs(Gtk.Box):
         self.historize_sensors()
         self.celcius.queue_draw()
         self.rpm.queue_draw()
+        self.pwm.queue_draw()
     
     def historize_sensors(self):
         for sensor in self.sensors.get_sensors():
             self.history[sensor].append((sensor.time, sensor.value))
+
+class MultiPaned(Gtk.Paned):
+    def __init__(self, widget=None):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, wide_handle=True, hexpand=True)
+        if widget is not None:
+            self.set_start_child(widget)
+        # TODO: Find a more sensible position for the handle
+        self.set_position(120)
+    
+    def append(self, widget):
+        if self.get_start_child() is None:
+            self.set_start_child(widget)
+        elif self.get_end_child() is None:
+            self.set_end_child(MultiPaned(widget))
+        else:
+            self.get_end_child().append(widget)
 
 # history helpers
 def values(seq):
@@ -75,12 +96,17 @@ class GraphCanvas(Gtk.DrawingArea):
 
     def __init__(self, unit, sensors):
         super().__init__(hexpand=True, vexpand=True)
+        #self.set_size_request(250, 100)
         self.unit = unit
         self.sensors = sensors
 
         ctrl = Gtk.EventControllerMotion()
         ctrl.connect('motion', self.on_motion)
         self.add_controller(ctrl)
+
+        gesture = Gtk.GestureClick()
+        gesture.connect('released', self.on_click_released)
+        self.add_controller(gesture)
 
         self.set_draw_func(self.draw, None)
 
@@ -144,7 +170,7 @@ class GraphCanvas(Gtk.DrawingArea):
         y_lines = list(takewhile(lambda v: v <= v_max, 
                     dropwhile(lambda v: v < v_min, 
                         count(0, self.unit.graph_lines()))))
-        while y_lines and h / len(y_lines) < 40:
+        while len(y_lines) > 2 and h / len(y_lines) < 40:
             y_lines = y_lines[::2]
         for line in y_lines:
             c.set_source_rgb(*fg_color)
@@ -176,8 +202,8 @@ class GraphCanvas(Gtk.DrawingArea):
         print("Graph {} draw took {:1.1f}ms + {:1.1f}ms + {:1.1f}ms = {:1.1f}ms to draw"\
             .format(self.unit, (ns1-ns0)/1000000, (ns2-ns1)/1000000,(ns3-ns2)/1000000,
                                (ns3-ns0)/1000000))
-        
-    def on_motion(self, ctrl, x, y):
+    
+    def get_info_at_coord(self, x, y):
         ns0 = monotonic_ns()
         h = self.get_height()
         w = self.get_width()
@@ -185,26 +211,31 @@ class GraphCanvas(Gtk.DrawingArea):
         v = self.v_max - ((y/h) * (self.v_max - self.v_min))
         t = self.t_min + ((x/w) * (self.t_max - self.t_min))
 
-        # print(f"motion t:{t} v:{v}")
-        # return
-
         line_distances = []
         for sensor in self.sensors.get_sensors(graph=True, unit=self.unit.value):
             hiter = dropwhile(lambda h: h[0] < t, self.history[sensor])
             try:
                 (st, sv) = next(hiter)
-                #print(sensor, st, sv)
+                if abs(st-t) > 10:
+                    continue
                 line_distances.append((abs(v-sv), sensor, st, sv))
             except StopIteration:
                 pass
         if not line_distances:
             return
         distance, sensor, time, value = sorted(line_distances, key=lambda a: a[0])[0]
-        self.set_tooltip_text("{} {}{}".format(sensor.name, value, Unit(sensor.unit)))
-        self.pointer = time, sensor, value
         ns1 = monotonic_ns()
-        print("Motion calc took {:1.1}ms".format((ns1-ns0)/1000000))
+        #print("Motion calc took {:1.1}ms".format((ns1-ns0)/1000000))
+        return sensor, time, value
+        
+    def on_motion(self, ctrl, x, y):
+        info = self.get_info_at_coord(x, y)
+        if info:
+            sensor, time, value = info
+            self.set_tooltip_text("{} {}{}".format(sensor.name, value, Unit(sensor.unit)))
+            self.pointer = time, sensor, value
+        else:
+            self.set_tooltip_text(None)
 
-
-
-
+    def on_click_released(self, *args):
+        print("Clicked {}".format(args))

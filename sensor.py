@@ -29,7 +29,7 @@ class Sensor(GObject.Object):
     
     def __repr__(self):
         return "Sensor {} {}{}".format(self.name, self.valueStr, self.unit)
-    
+
     def get_value(self):
         raise NotImplementedError
     

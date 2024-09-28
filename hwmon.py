@@ -110,6 +110,11 @@ class HwmonDevice(Gtk.Expander):
             name = fan.split('_')[0]
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Fan(self, name, cfg)
+        
+        for pwm in glob.glob("pwm[0-9]", root_dir=self.dir):
+            name = pwm
+            cfg = self.config["{}:{}".format(self.id, name)]
+            yield Pwm(self, name, cfg)
     
     def on_expanded(self, *a):
         self.config_section['expanded'] = str(self.get_property('expanded'))
@@ -163,3 +168,12 @@ class Fan(HwmonSensor):
     
     def format(self):
         return "{} {}".format(self.value, Unit(self.unit))
+
+class Pwm(HwmonSensor):
+    unit = Unit.PWM.value
+    def get_value(self):
+        return int(readStrip(
+            os.path.join(self.device.dir, self.measurement)))
+    
+    def format(self):
+        return "{}{}".format(self.value, Unit(self.unit))
