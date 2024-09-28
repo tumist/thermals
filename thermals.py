@@ -37,8 +37,11 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config['DEFAULT']['color'] = "rgb(255, 255, 255)"
         self.config['DEFAULT']['graph'] = 'False'
 
-        self.sensors = Hwmon(self.config)
-        self.graph = Graphs(self.config, self.sensors)
+        self.hwmon = Hwmon(self.config)
+        self.graph = Graphs(self.config, self.hwmon)
+
+        self.graph.create_graphs()
+        
         self.app.get_style_manager()\
             .bind_property('dark', self.graph, 'drawDark',
                            GObject.BindingFlags.SYNC_CREATE)
@@ -46,18 +49,26 @@ class MainWindow(Gtk.ApplicationWindow):
         box = Gtk.Box()
         box.append(self.graph)
         box.append(Gtk.ScrolledWindow(
-            child=self.sensors, hscrollbar_policy=Gtk.PolicyType.NEVER))
+            child=self.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
         self.set_child(box)
         self.set_default_size(900, 400)
         self.on_timer()
 
+        #GLib.timeout_add(10000, self.on_foo)
+
     def on_timer(self):
         GLib.timeout_add(2000, self.on_timer)
         t0 = monotonic_ns()
-        self.sensors.refresh()
+        self.hwmon.refresh()
         t1 = monotonic_ns()
         self.graph.refresh()
         print("Sensor refresh took {:1.1f}ms".format((t1-t0)/1000000))
+    
+    def on_foo(self):
+        print("Clearing graphs")
+        self.graph.clear_graphs()
+        #self.graph.create_graphs()
+
 
 class MyApp(Adw.Application):
     def __init__(self, **kwargs):

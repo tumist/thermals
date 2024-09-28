@@ -11,6 +11,8 @@ def convertTemp(inp: str):
     return float(inp) / 1000.0
 
 class Hwmon(Gtk.Box):
+    graph = None
+
     def __init__(self, config):
         self.config = config
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
@@ -18,6 +20,7 @@ class Hwmon(Gtk.Box):
         self.devices = []
         for dir in glob.glob("/sys/class/hwmon/hwmon[0-9]"):
             device = HwmonDevice(dir, config)
+            device.graph = self.graph
             self.devices.append(device)
             self.append(device)
     

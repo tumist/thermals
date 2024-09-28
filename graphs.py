@@ -1,5 +1,5 @@
 from collections import deque, defaultdict
-from itertools import islice, takewhile, dropwhile, count, batched
+from itertools import islice, takewhile, dropwhile, count, batched, groupby
 
 from gi.repository import Gtk, GObject
 
@@ -18,54 +18,55 @@ class Graphs(Gtk.Box):
     drawDark = GObject.Property(type=bool, default=False)
     history = defaultdict(lambda: deque([], 60 * 60 * 2))
 
-    def __init__(self, config, sensors):
+    def __init__(self, config, hwmon):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        self.sensors = sensors
+        self.hwmon = hwmon
         
-        paned = MultiPaned()
-
-        self.celcius = GraphCanvas(Unit.CELCIUS, self.sensors)
-        self.celcius.sensors = sensors
-        self.celcius.history = self.history
-        self.bind_property('graphSeconds', self.celcius, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
-        self.bind_property('drawDark', self.celcius, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
-        paned.append(self.celcius)
-
-        self.rpm = GraphCanvas(Unit.RPM, self.sensors)
-        self.rpm.history = self.history
-        self.bind_property('graphSeconds', self.rpm, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
-        self.bind_property('drawDark', self.rpm, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
-        paned.append(self.rpm)
-
-        self.pwm = GraphCanvas(Unit.PWM, self.sensors)
-        self.pwm.history = self.history
-        self.bind_property('graphSeconds', self.pwm, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
-        self.bind_property('drawDark', self.pwm, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
-        paned.append(self.pwm)
+        self.paned = MultiPaned()
+        #self.create_graphs()
 
         timeselector = Gtk.DropDown.new_from_strings(
             [s for (s, _) in self.timeSelections]
         )
         timeselector.connect("notify::selected", self.on_time_selected)
 
-        self.append(Gtk.ScrolledWindow(child=paned))
+        self.append(self.paned)
         self.append(timeselector)
+    
+    def clear_graphs(self):
+        self.paned = MultiPaned()
+        self.canvases = []
+    def create_graphs(self):
+        if hasattr(self, 'canvases') and self.canvases:
+            print("WARNING: canvases is not empty")
+        self.canvases = []
+        graph_sensors = sorted(self.hwmon.get_sensors(graph=True), key=lambda s: s.unit)
+        for unit, sensors in groupby(graph_sensors, key=lambda s: s.unit):
+            print("Creating canvas for {}".format(Unit(unit)))
+            canvas = GraphCanvas(Unit(unit), self.hwmon)
+            canvas.history = self.history
+            self.bind_property('graphSeconds', canvas, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
+            self.bind_property('drawDark', canvas, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
+            self.canvases.append(canvas)
+            self.paned.append(canvas)
 
     def on_time_selected(self, dropdown, _):
         selected = dropdown.get_property("selected")
         self.graphSeconds = self.timeSelections[selected][1]
-        self.celcius.queue_draw()
-        self.rpm.queue_draw()
+        for canvas in self.canvases:
+            canvas.queue_draw()
     
     def refresh(self):
         self.historize_sensors()
-        self.celcius.queue_draw()
-        self.rpm.queue_draw()
-        self.pwm.queue_draw()
+        for canvas in self.canvases:
+            canvas.queue_draw()
     
     def historize_sensors(self):
-        for sensor in self.sensors.get_sensors():
+        for sensor in self.hwmon.get_sensors():
             self.history[sensor].append((sensor.time, sensor.value))
+    
+    def on_graph_change(self, *args):
+        print("graph changed", *a)
 
 class MultiPaned(Gtk.Paned):
     def __init__(self, widget=None):
