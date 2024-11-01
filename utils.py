@@ -6,18 +6,21 @@ class Unit(Enum):
     CELCIUS = 0
     RPM = 1
     PWM = 2
+    WATT = 3
 
     def __str__(self):
         match self:
             case Unit.CELCIUS: return "°C"
             case Unit.RPM: return "RPM"
             case Unit.PWM: return ""
+            case Unit.WATT: return "W"
 
     def graph_lines(self) -> int:
         match self:
             case Unit.RPM: return 250
             case Unit.CELCIUS: return 10
             case Unit.PWM: return 10
+            case Unit.WATT: return 10
 
 def readStrip(path: str) -> str:
     with open(path, 'r') as fd:

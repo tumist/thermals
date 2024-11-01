@@ -10,6 +10,9 @@ from sensor import Sensor
 def convertTemp(inp: str):
     return float(inp) / 1000.0
 
+def convertWatt(inp: str):
+    return float(inp) / 1000000.0
+
 class Hwmon(Gtk.Box):
     graph = None
 
@@ -124,6 +127,13 @@ class HwmonDevice(Gtk.Expander):
             name = pwm
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Pwm(self, name, cfg)
+        
+        for power in glob.glob("power[0-9]_average", root_dir=self.dir):
+            name = power.split('_')[0]
+            cfg = self.config["{}:{}".format(self.id, name)]
+            yield Power(self, name, cfg)
+        else:
+            print("Found no power sensors")
     
     def select_sensor(self, sensor):
         print("Selecting sensor {}".format(sensor))
@@ -197,5 +207,14 @@ class Pwm(HwmonSensor):
         return int(readStrip(
             os.path.join(self.device.dir, self.measurement)))
     
+    def format(self):
+        return "{}{}".format(self.value, Unit(self.unit))
+
+class Power(HwmonSensor):
+    unit = Unit.WATT.value
+    def get_value(self):
+        return convertWatt(readStrip(
+            os.path.join(self.device.dir, self.measurement + "_average")
+        ))
     def format(self):
         return "{}{}".format(self.value, Unit(self.unit))
