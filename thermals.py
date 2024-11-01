@@ -39,6 +39,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self.hwmon = Hwmon(self.config)
         self.graph = Graphs(self.config, self.hwmon)
+        self.graph.app = self
 
         self.graph.create_graphs()
         
@@ -46,15 +47,32 @@ class MainWindow(Gtk.ApplicationWindow):
             .bind_property('dark', self.graph, 'drawDark',
                            GObject.BindingFlags.SYNC_CREATE)
         
-        box = Gtk.Box()
-        box.append(self.graph)
-        box.append(Gtk.ScrolledWindow(
+        hbox = Gtk.Box()
+        hbox.append(Gtk.ScrolledWindow(
             child=self.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        self.set_child(box)
-        self.set_default_size(900, 400)
-        self.on_timer()
+        hbox.append(self.graph)
+        self.set_child(hbox)
 
-        #GLib.timeout_add(10000, self.on_foo)
+        # Restore window size
+        try:
+            width = self.config.getint('window', 'width')
+            height = self.config.getint('window', 'height')
+        except configparser.NoSectionError:
+            width = 900
+            height = 600
+        self.set_default_size(width, height)
+        # Save window size
+        self.connect("notify::default-width", self.on_notify_default_size)
+        self.connect("notify::default-height", self.on_notify_default_size)
+        
+        # kickoff sensor update timer
+        self.on_timer()
+    
+    def on_notify_default_size(self, *args):
+        print("On notify default size")
+        w, h = self.get_default_size()
+        self.config['window']['width'] = str(w)
+        self.config['window']['height'] = str(h)
 
     def on_timer(self):
         GLib.timeout_add(2000, self.on_timer)
@@ -64,11 +82,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self.graph.refresh()
         print("Sensor refresh took {:1.1f}ms".format((t1-t0)/1000000))
     
-    def on_foo(self):
-        print("Clearing graphs")
-        self.graph.clear_graphs()
-        #self.graph.create_graphs()
-
+    def select_sensor(self, sensor):
+        self.hwmon.select_sensor(sensor)
 
 class MyApp(Adw.Application):
     def __init__(self, **kwargs):
@@ -80,5 +95,5 @@ class MyApp(Adw.Application):
         self.win.present()
 
 if __name__ == "__main__":
-    app = MyApp(application_id="com.example.GtkApplication")
+    app = MyApp(application_id="is.tum.Thermals")
     app.run(sys.argv)

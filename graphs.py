@@ -14,28 +14,42 @@ class Graphs(Gtk.Box):
         ("1 hour", 60 * 60),
         ("3 hours", 60 * 60 * 3),
     ]
+    graph = GObject.Property(type=bool, default=True)
     graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     drawDark = GObject.Property(type=bool, default=False)
-    history = defaultdict(lambda: deque([], 60 * 60 * 2))
+    history = defaultdict(lambda: deque([], 60 * 60 * 3))
 
     def __init__(self, config, hwmon):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.config = config
         self.hwmon = hwmon
         
-        self.paned = MultiPaned()
-        #self.create_graphs()
+        self.paned = MultiPaned(config['graph_pane'])
 
         timeselector = Gtk.DropDown.new_from_strings(
             [s for (s, _) in self.timeSelections]
         )
         timeselector.connect("notify::selected", self.on_time_selected)
 
+        graphCheck = Gtk.CheckButton.new_with_label("Enable graphing")
+        self.bind_property('graph', graphCheck, 'active', GObject.BindingFlags.BIDIRECTIONAL|GObject.BindingFlags.SYNC_CREATE)
+
+        recreateGraphs = Gtk.Button.new_with_label("Recreate graphs")
+        recreateGraphs.connect('clicked', self.on_recreate_graphs)
+
         self.append(self.paned)
-        self.append(timeselector)
+        bottomBox = Gtk.Box(homogeneous=True)
+        bottomBox.append(timeselector)
+        bottomBox.append(graphCheck)
+        bottomBox.append(recreateGraphs)
+        self.append(bottomBox)
     
     def clear_graphs(self):
-        self.paned = MultiPaned()
+        self.remove(self.paned)
+        self.paned = MultiPaned(self.config['graph_pane'])
+        self.prepend(self.paned)
         self.canvases = []
+    
     def create_graphs(self):
         if hasattr(self, 'canvases') and self.canvases:
             print("WARNING: canvases is not empty")
@@ -45,6 +59,7 @@ class Graphs(Gtk.Box):
             print("Creating canvas for {}".format(Unit(unit)))
             canvas = GraphCanvas(Unit(unit), self.hwmon)
             canvas.history = self.history
+            canvas.app = self.app
             self.bind_property('graphSeconds', canvas, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
             self.bind_property('drawDark', canvas, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
             self.canvases.append(canvas)
@@ -57,6 +72,8 @@ class Graphs(Gtk.Box):
             canvas.queue_draw()
     
     def refresh(self):
+        if not self.graph:
+            return
         self.historize_sensors()
         for canvas in self.canvases:
             canvas.queue_draw()
@@ -66,23 +83,48 @@ class Graphs(Gtk.Box):
             self.history[sensor].append((sensor.time, sensor.value))
     
     def on_graph_change(self, *args):
-        print("graph changed", *a)
+        print("graph changed", *args)
+    
+    def on_recreate_graphs(self, *args):
+        self.clear_graphs()
+        self.create_graphs()
 
 class MultiPaned(Gtk.Paned):
-    def __init__(self, widget=None):
+    def __init__(self, config, widget=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, wide_handle=True, hexpand=True)
+        self.config = config
+
+        self.connect("notify::position", self.on_position_changed)
+
         if widget is not None:
             self.set_start_child(widget)
-        # TODO: Find a more sensible position for the handle
-        self.set_position(120)
+            print("Initializing MultiPaned with widget {}".format(widget.unit.name))
+            self.set_config_position()
     
     def append(self, widget):
+        print("MultiPaned appending {}".format(widget.unit))
         if self.get_start_child() is None:
             self.set_start_child(widget)
+            self.set_config_position()
         elif self.get_end_child() is None:
-            self.set_end_child(MultiPaned(widget))
+            self.set_end_child(MultiPaned(self.config, widget))
         else:
             self.get_end_child().append(widget)
+    
+    def on_position_changed(self, *args):
+        child = self.get_start_child()
+        position = self.get_position()
+        if child:
+            print("MultiPaned {} position changed {}".format(child.unit.name, position))
+            self.config[child.unit.name] = str(position)
+            self.config.write()
+    
+    def set_config_position(self):
+        widget = self.get_start_child()
+        if widget is None:
+            return
+        pos = self.config.get(widget.unit.name, 100)
+        self.set_position(int(pos))
 
 # history helpers
 def values(seq):
@@ -94,10 +136,10 @@ class GraphCanvas(Gtk.DrawingArea):
     drawDark = GObject.Property(type=bool, default=False)
     graphSeconds = GObject.Property(type=int)
     pointer = (None, None, None)
+    app = None
 
     def __init__(self, unit, sensors):
         super().__init__(hexpand=True, vexpand=True)
-        #self.set_size_request(250, 100)
         self.unit = unit
         self.sensors = sensors
 
@@ -137,10 +179,10 @@ class GraphCanvas(Gtk.DrawingArea):
             v_min = 0
         else:
             v_min = min(values(
-                [dropwhile(lambda h: h[0] < t_min, self.history[s]) for s in sensors]
+                [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
                 ))
         v_max = max(values(
-            [dropwhile(lambda h: h[0] < t_min, self.history[s]) for s in sensors]
+            [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
             ))
 
         # Add 5% on max and min
@@ -187,22 +229,24 @@ class GraphCanvas(Gtk.DrawingArea):
 
         # Draw sensors
         c.set_line_width(2)
+        lines_drawn = 0
         for sensor in sensors:
             #hiter = dropwhile(lambda h: h[0] < t_min, self.history[sensor])
             hiter = takewhile(lambda h: h[0] > t_min, reversed(self.history[sensor]))
-
+            
             c.set_source_rgb(*sensor.RGB_triple())
             t0, v0 = next(hiter)
             
             c.move_to(translate_x(t0), translate_y(v0))
             for (t, v) in hiter:
                 c.line_to(translate_x(t), translate_y(v))
+                lines_drawn += 1
             c.stroke()
         
         ns3 = monotonic_ns()
-        print("Graph {} draw took {:1.1f}ms + {:1.1f}ms + {:1.1f}ms = {:1.1f}ms to draw"\
+        print("Graph {} draw took {:1.1f}ms + {:1.1f}ms + {:1.1f}ms = {:1.1f}ms to draw ({} lines)"\
             .format(self.unit, (ns1-ns0)/1000000, (ns2-ns1)/1000000,(ns3-ns2)/1000000,
-                               (ns3-ns0)/1000000))
+                               (ns3-ns0)/1000000, lines_drawn))
     
     def get_info_at_coord(self, x, y):
         ns0 = monotonic_ns()
@@ -238,5 +282,10 @@ class GraphCanvas(Gtk.DrawingArea):
         else:
             self.set_tooltip_text(None)
 
-    def on_click_released(self, *args):
-        print("Clicked {}".format(args))
+    def on_click_released(self, gesture, click_n, x, y):
+        print("Clicked {}".format(click_n, x, y))
+
+        info = self.get_info_at_coord(x, y)
+        if info and click_n == 1:
+            sensor, time, value = info
+            self.app.select_sensor(sensor)

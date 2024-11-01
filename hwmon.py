@@ -32,6 +32,11 @@ class Hwmon(Gtk.Box):
         for dev in self.devices:
             for sensor in dev.get_sensors(**kw):
                 yield sensor
+    
+    def select_sensor(self, sensor):
+        for dev in self.devices:
+            if dev.select_sensor(sensor):
+                dev.grab_focus()
 
 class HwmonDevice(Gtk.Expander):
     def __init__(self, dir, config):
@@ -60,7 +65,8 @@ class HwmonDevice(Gtk.Expander):
             store.append(sensor)
 
         # Selection model
-        ss = Gtk.NoSelection(model=store)
+        ss = Gtk.SingleSelection(autoselect=False, model=store, can_unselect=True)
+        self.ss = ss
 
         # Column View
         self.view = Gtk.ColumnView.new(model=ss)
@@ -118,6 +124,19 @@ class HwmonDevice(Gtk.Expander):
             name = pwm
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Pwm(self, name, cfg)
+    
+    def select_sensor(self, sensor):
+        print("Selecting sensor {}".format(sensor))
+        for (i, s) in enumerate(self.store):
+            if s == sensor:
+                print("Found sensor at position {}".format(i))
+                #self.view.scroll_to(i, None, Gtk.ListScrollFlags.SELECT)
+                self.set_expanded(True)
+                self.ss.set_selected(i)
+                #self.ss.grab_focus()
+                return True
+        self.ss.set_selected(Gtk.INVALID_LIST_POSITION)
+
     
     def on_expanded(self, *a):
         self.config_section['expanded'] = str(self.get_property('expanded'))
