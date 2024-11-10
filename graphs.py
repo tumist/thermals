@@ -5,6 +5,7 @@ from gi.repository import Gtk, GObject
 
 from utils import Unit, monotonic_s
 from time import monotonic_ns
+from hwmon import Sensor
 
 class Graphs(Gtk.Box):
     timeSelections = [
@@ -37,11 +38,15 @@ class Graphs(Gtk.Box):
         recreateGraphs = Gtk.Button.new_with_label("Recreate graphs")
         recreateGraphs.connect('clicked', self.on_recreate_graphs)
 
+        rescanMinMax = Gtk.Button.new_with_label("Rescan min/max")
+        rescanMinMax.connect('clicked', self.on_rescan_min_max)
+
         self.append(self.paned)
         bottomBox = Gtk.Box(homogeneous=True)
         bottomBox.append(timeselector)
         bottomBox.append(graphCheck)
         bottomBox.append(recreateGraphs)
+        bottomBox.append(rescanMinMax)
         self.append(bottomBox)
     
     def clear_graphs(self):
@@ -88,6 +93,10 @@ class Graphs(Gtk.Box):
     def on_recreate_graphs(self, *args):
         self.clear_graphs()
         self.create_graphs()
+    
+    def on_rescan_min_max(self, *args):
+        for canvas in self.canvases:
+            canvas.scan_min_max(monotonic_s() - canvas.graphSeconds)
 
 class MultiPaned(Gtk.Paned):
     def __init__(self, config, widget=None):
@@ -138,10 +147,13 @@ class GraphCanvas(Gtk.DrawingArea):
     pointer = (None, None, None)
     app = None
 
-    def __init__(self, unit, sensors):
+    v_min = None
+    v_max = None
+
+    def __init__(self, unit, hwmon):
         super().__init__(hexpand=True, vexpand=True)
         self.unit = unit
-        self.sensors = sensors
+        self.hwmon = hwmon
 
         ctrl = Gtk.EventControllerMotion()
         ctrl.connect('motion', self.on_motion)
@@ -152,6 +164,9 @@ class GraphCanvas(Gtk.DrawingArea):
         self.add_controller(gesture)
 
         self.set_draw_func(self.draw, None)
+    
+    def sensors(self) -> list[Sensor]:
+        return list(self.hwmon.get_sensors(graph=True, unit=self.unit.value))
 
     def draw(self, area, c, w, h, data):
         ns0 = monotonic_ns()
@@ -162,50 +177,35 @@ class GraphCanvas(Gtk.DrawingArea):
         else:
             bg_color = (0.964, 0.96, 0.913)
             fg_color = (0.8, 0.8, 0.8)
-
         # Fill background with a colour
         c.set_source_rgb(*bg_color)
         c.paint()
 
-        sensors = list(self.sensors.get_sensors(graph=True, unit=self.unit.value))
-        if not sensors:
-            print("GraphCanvas {} has no sensors to draw".format(self.unit))
-            return
-
+        # time window that we are graphing
         t_min = monotonic_s() - self.graphSeconds
         t_max = monotonic_s()
         
-        if self.unit == Unit.RPM:
-            v_min = 0
-        else:
-            v_min = min(values(
-                [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
-                ))
-        v_max = max(values(
-            [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
-            ))
+        if self.v_min is None or self.v_max is None:
+            self.scan_min_max(t_min)
+        v_min = self.v_min
+        v_max = self.v_max
 
         # Add 5% on max and min
         v_min -= (v_max-v_min)*0.05
         v_max += (v_max-v_min)*0.05
 
-        ns1 = monotonic_ns()
-
-        if v_min == v_max:
-            v_max += 1
-
         self.t_min = t_min
         self.t_max = t_max
-        self.v_min = v_min
-        self.v_max = v_max
 
-        # Time -> x coord
+        # Time -> Canvas x coord
         def translate_x(time: float) -> float:
             return w * ((time - t_min) / (t_max - t_min))
         
-        # Sensor value -> y coord
+        # Sensor value -> Canvas y coord
         def translate_y(value: float) -> float:
             return h * (1 - ((value - v_min) / (v_max - v_min)))
+        
+        ns1 = monotonic_ns() # time setup
 
         # Draw background lines
         c.select_font_face("Sans")
@@ -225,28 +225,50 @@ class GraphCanvas(Gtk.DrawingArea):
             c.stroke()
         c.set_dash([])
 
-        ns2 = monotonic_ns()
+        ns2 = monotonic_ns() # time background lines
 
         # Draw sensors
         c.set_line_width(2)
         lines_drawn = 0
-        for sensor in sensors:
+        for sensor in self.sensors():
             #hiter = dropwhile(lambda h: h[0] < t_min, self.history[sensor])
             hiter = takewhile(lambda h: h[0] > t_min, reversed(self.history[sensor]))
             
             c.set_source_rgb(*sensor.RGB_triple())
             t0, v0 = next(hiter)
-            
+
+            if v0 < self.v_min:
+                self.v_min = v0
+            elif v0 > self.v_max:
+                self.v_max = v0
+        
             c.move_to(translate_x(t0), translate_y(v0))
             for (t, v) in hiter:
                 c.line_to(translate_x(t), translate_y(v))
                 lines_drawn += 1
             c.stroke()
         
-        ns3 = monotonic_ns()
-        print("Graph {} draw took {:1.1f}ms + {:1.1f}ms + {:1.1f}ms = {:1.1f}ms to draw ({} lines)"\
+        ns3 = monotonic_ns() # time graph lines
+
+        print("Graph {} draw took {:1.2f}ms + {:1.2f}ms + {:1.2f}ms = {:1.2f}ms to draw ({} graph lines)"\
             .format(self.unit, (ns1-ns0)/1000000, (ns2-ns1)/1000000,(ns3-ns2)/1000000,
                                (ns3-ns0)/1000000, lines_drawn))
+    
+    def scan_min_max(self, t_min):
+        sensors = self.sensors()
+        if self.unit == Unit.RPM:
+            self.v_min = 0
+        else:
+            self.v_min = min(values(
+                [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
+                ))
+        self.v_max = max(values(
+            [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
+            ))
+        if self.v_min >= self.v_max:
+            # Add some space when there is no/one value
+            # TODO: May be better to add some margin to graph lines instead
+            self.v_max = self.v_min + 1
     
     def get_info_at_coord(self, x, y):
         ns0 = monotonic_ns()
@@ -257,7 +279,7 @@ class GraphCanvas(Gtk.DrawingArea):
         t = self.t_min + ((x/w) * (self.t_max - self.t_min))
 
         line_distances = []
-        for sensor in self.sensors.get_sensors(graph=True, unit=self.unit.value):
+        for sensor in self.sensors():
             hiter = dropwhile(lambda h: h[0] < t, self.history[sensor])
             try:
                 (st, sv) = next(hiter)

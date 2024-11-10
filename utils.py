@@ -22,16 +22,18 @@ class Unit(Enum):
             case Unit.PWM: return 10
             case Unit.WATT: return 10
 
-def readStrip(path: str) -> str:
+def readlineStrip(path: str) -> str:
     with open(path, 'r') as fd:
         return fd.readline().strip()
 
 def monotonic_s() -> int:
     return monotonic_ns() // 1000000000
 
-def readGio(path, func=lambda x: x):
+def readGio(path, func=lambda x: x, decode='utf-8'):
     uri = Gio.File.new_for_path(path)
     def inner():
         status, contents, etag_out = Gio.File.load_contents(uri)
+        if decode:
+            contents = contents.decode(decode)
         return func(contents.strip())
     return inner

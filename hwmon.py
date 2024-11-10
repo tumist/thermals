@@ -4,7 +4,7 @@ from os.path import basename
 import os.path
 from collections.abc import Iterator
 
-from utils import Unit, readStrip, readGio
+from utils import Unit, readlineStrip, readGio
 from sensor import Sensor
 
 def convertTemp(inp: str):
@@ -14,16 +14,15 @@ def convertWatt(inp: str):
     return float(inp) / 1000000.0
 
 class Hwmon(Gtk.Box):
-    graph = None
-
-    def __init__(self, config):
+    def __init__(self, app, config):
+        self.app = app
         self.config = config
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
 
         self.devices = []
         for dir in glob.glob("/sys/class/hwmon/hwmon[0-9]"):
             device = HwmonDevice(dir, config)
-            device.graph = self.graph
+            device.app = self.app
             self.devices.append(device)
             self.append(device)
     
@@ -46,7 +45,7 @@ class HwmonDevice(Gtk.Expander):
         self.name = basename(dir)
         self.id = basename(dir)
         try:
-            hwmon_name = readStrip(dir + "/name")
+            hwmon_name = readlineStrip(dir + "/name")
             self.name += " [" + hwmon_name + "]"
             self.id += ":" + hwmon_name
         except FileNotFoundError:
@@ -98,6 +97,7 @@ class HwmonDevice(Gtk.Expander):
                     item.set_child(box)
                     item.get_item().bind_property("graph", check, "active",
                                                   GObject.BindingFlags.BIDIRECTIONAL)
+                    item.get_item().connect("notify::graph", lambda *args: self.app.graph.on_recreate_graphs())
 
             factory.connect('bind', factory_bind)
             column = Gtk.ColumnViewColumn(title=column_title, factory=factory, **kw)
@@ -135,7 +135,7 @@ class HwmonDevice(Gtk.Expander):
         else:
             print("Found no power sensors")
     
-    def select_sensor(self, sensor):
+    def select_sensor(self, sensor: Sensor):
         print("Selecting sensor {}".format(sensor))
         for (i, s) in enumerate(self.store):
             if s == sensor:
@@ -146,7 +146,6 @@ class HwmonDevice(Gtk.Expander):
                 #self.ss.grab_focus()
                 return True
         self.ss.set_selected(Gtk.INVALID_LIST_POSITION)
-
     
     def on_expanded(self, *a):
         self.config_section['expanded'] = str(self.get_property('expanded'))
@@ -179,14 +178,17 @@ class Temperature(HwmonSensor):
     def __init__(self, *args):
         super().__init__(*args)
         try:
-            label = readStrip(os.path.join(self.device.dir, self.measurement + "_label"))
+            #label = readStrip(os.path.join(self.device.dir, self.measurement + "_label"))
+            label = readGio(os.path.join(self.device.dir, self.measurement + "_label"))()
             self.name = label
         except FileNotFoundError:
             pass
 
     def get_value(self):
-        return convertTemp(readStrip(
-            os.path.join(self.device.dir, self.measurement + "_input")))
+        # return convertTemp(readlineStrip(
+        #     os.path.join(self.device.dir, self.measurement + "_input")))
+        return readGio(os.path.join(self.device.dir, self.measurement + "_input"),
+                       func = convertTemp)()
     
     def format(self):
         return "{:.1f}{}".format(self.value, Unit(self.unit))
@@ -195,8 +197,10 @@ class Fan(HwmonSensor):
     unit = Unit.RPM.value
 
     def get_value(self):
-        return int(readStrip(
-            os.path.join(self.device.dir, self.measurement + "_input")))
+        # return int(readlineStrip(
+        #     os.path.join(self.device.dir, self.measurement + "_input")))
+        return readGio(os.path.join(self.device.dir, self.measurement + "_input"),
+                       func = int)()
     
     def format(self):
         return "{} {}".format(self.value, Unit(self.unit))
@@ -204,8 +208,9 @@ class Fan(HwmonSensor):
 class Pwm(HwmonSensor):
     unit = Unit.PWM.value
     def get_value(self):
-        return int(readStrip(
-            os.path.join(self.device.dir, self.measurement)))
+        # return int(readlineStrip(
+        #     os.path.join(self.device.dir, self.measurement)))
+        return readGio(os.path.join(self.device.dir, self.measurement), func = int)()
     
     def format(self):
         return "{}{}".format(self.value, Unit(self.unit))
@@ -213,8 +218,10 @@ class Pwm(HwmonSensor):
 class Power(HwmonSensor):
     unit = Unit.WATT.value
     def get_value(self):
-        return convertWatt(readStrip(
-            os.path.join(self.device.dir, self.measurement + "_average")
-        ))
+        # return convertWatt(readlineStrip(
+        #     os.path.join(self.device.dir, self.measurement + "_average")
+        # ))
+        return readGio(os.path.join(self.device.dir, self.measurement + "_average"),
+                       func = convertWatt)()
     def format(self):
         return "{}{}".format(self.value, Unit(self.unit))
