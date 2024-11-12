@@ -75,7 +75,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config['window']['height'] = str(h)
 
     def on_timer(self):
-        GLib.timeout_add(1000, self.on_timer)
+        GLib.timeout_add(2000, self.on_timer)
         t0 = monotonic_ns()
         self.hwmon.refresh()
         t1 = monotonic_ns()

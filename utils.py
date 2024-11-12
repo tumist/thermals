@@ -29,7 +29,7 @@ def readlineStrip(path: str) -> str:
 def monotonic_s() -> int:
     return monotonic_ns() // 1000000000
 
-def readGio(path, func=lambda x: x, decode='utf-8'):
+def readGio(path, func = lambda x: x, decode = 'utf-8'):
     uri = Gio.File.new_for_path(path)
     def inner():
         status, contents, etag_out = Gio.File.load_contents(uri)

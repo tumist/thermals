@@ -15,7 +15,6 @@ class Graphs(Gtk.Box):
         ("1 hour", 60 * 60),
         ("3 hours", 60 * 60 * 3),
     ]
-    graph = GObject.Property(type=bool, default=True)
     graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     drawDark = GObject.Property(type=bool, default=False)
     history = defaultdict(lambda: deque([], 60 * 60 * 3))
@@ -32,20 +31,12 @@ class Graphs(Gtk.Box):
         )
         timeselector.connect("notify::selected", self.on_time_selected)
 
-        graphCheck = Gtk.CheckButton.new_with_label("Enable graphing")
-        self.bind_property('graph', graphCheck, 'active', GObject.BindingFlags.BIDIRECTIONAL|GObject.BindingFlags.SYNC_CREATE)
-
-        recreateGraphs = Gtk.Button.new_with_label("Recreate graphs")
-        recreateGraphs.connect('clicked', self.on_recreate_graphs)
-
         rescanMinMax = Gtk.Button.new_with_label("Rescan min/max")
         rescanMinMax.connect('clicked', self.on_rescan_min_max)
 
         self.append(self.paned)
         bottomBox = Gtk.Box(homogeneous=True)
         bottomBox.append(timeselector)
-        bottomBox.append(graphCheck)
-        bottomBox.append(recreateGraphs)
         bottomBox.append(rescanMinMax)
         self.append(bottomBox)
     
@@ -77,8 +68,6 @@ class Graphs(Gtk.Box):
             canvas.queue_draw()
     
     def refresh(self):
-        if not self.graph:
-            return
         self.historize_sensors()
         for canvas in self.canvases:
             canvas.queue_draw()
@@ -89,10 +78,6 @@ class Graphs(Gtk.Box):
     
     def on_graph_change(self, *args):
         print("graph changed", *args)
-    
-    def on_recreate_graphs(self, *args):
-        self.clear_graphs()
-        self.create_graphs()
     
     def on_rescan_min_max(self, *args):
         for canvas in self.canvases:
