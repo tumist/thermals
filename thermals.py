@@ -1,4 +1,5 @@
 import sys
+import os, os.path
 from time import monotonic_ns
 
 import gi
@@ -11,11 +12,15 @@ from graphs import Graphs
 from hwmon import Hwmon
 
 class Config(configparser.ConfigParser):
-    filename = "thermals.ini"
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        os.makedirs(os.path.dirname(self.filepath()), exist_ok=True)
+    def filepath(self):
+        return os.path.join(GLib.get_user_config_dir(), "thermals", "thermals.ini")
     def read(self):
-        super().read(self.filename)
+        super().read(self.filepath())
     def write(self):
-        with open(self.filename, 'w') as configfile:
+        with open(self.filepath(), 'w') as configfile:
             super().write(configfile)
     def __getitem__(self, section):
         if not self.has_section(section) and \
@@ -34,8 +39,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config = Config()
         self.config.read()
         self.config['DEFAULT']['expanded'] = 'True'
-        self.config['DEFAULT']['color'] = "rgb(255, 255, 255)"
-        self.config['DEFAULT']['graph'] = 'False'
+        self.config['DEFAULT']['color'] = "rgb(127, 127, 127)"
+        self.config['DEFAULT']['graph'] = 'True'
 
         self.hwmon = Hwmon(self, self.config)
         self.graph = Graphs(self.config, self.hwmon)
@@ -69,7 +74,6 @@ class MainWindow(Gtk.ApplicationWindow):
         self.on_timer()
     
     def on_notify_default_size(self, *args):
-        print("On notify default size")
         w, h = self.get_default_size()
         self.config['window']['width'] = str(w)
         self.config['window']['height'] = str(h)

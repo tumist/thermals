@@ -23,12 +23,11 @@ class Graphs(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.config = config
         self.hwmon = hwmon
+        self.canvases = [] # populated with `create_graphs`
         
         self.paned = MultiPaned(config['graph_pane'])
 
-        timeselector = Gtk.DropDown.new_from_strings(
-            [s for (s, _) in self.timeSelections]
-        )
+        timeselector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
         timeselector.connect("notify::selected", self.on_time_selected)
 
         rescanMinMax = Gtk.Button.new_with_label("Rescan min/max")
@@ -79,10 +78,6 @@ class Graphs(Gtk.Box):
     def recreate_graphs(self):
         self.clear_graphs()
         self.create_graphs()
-
-    
-    def on_graph_change(self, *args):
-        print("graph changed", *args)
     
     def on_rescan_min_max(self, *args):
         for canvas in self.canvases:
