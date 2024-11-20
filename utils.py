@@ -15,6 +15,13 @@ class Unit(Enum):
             case Unit.PWM: return ""
             case Unit.WATT: return "W"
 
+    def title(self) -> str:
+        match self:
+            case Unit.CELCIUS: return "Celcius"
+            case Unit.RPM: return "RPM"
+            case Unit.PWM: return "PWM"
+            case Unit.WATT: return "Watt"
+
     def graph_lines(self) -> int:
         match self:
             case Unit.RPM: return 250

@@ -97,7 +97,7 @@ class HwmonDevice(Gtk.Expander):
                     item.set_child(box)
                     item.get_item().bind_property("graph", check, "active",
                                                   GObject.BindingFlags.BIDIRECTIONAL)
-                    item.get_item().connect("notify::graph", lambda *args: self.app.graph.on_recreate_graphs())
+                    item.get_item().connect("notify::graph", lambda *args: self.app.graph.recreate_graphs())
 
             factory.connect('bind', factory_bind)
             column = Gtk.ColumnViewColumn(title=column_title, factory=factory, **kw)

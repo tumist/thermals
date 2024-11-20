@@ -65,16 +65,21 @@ class Graphs(Gtk.Box):
         selected = dropdown.get_property("selected")
         self.graphSeconds = self.timeSelections[selected][1]
         for canvas in self.canvases:
-            canvas.queue_draw()
+            canvas.do_draw()
     
     def refresh(self):
         self.historize_sensors()
         for canvas in self.canvases:
-            canvas.queue_draw()
+            canvas.do_draw()
     
     def historize_sensors(self):
         for sensor in self.hwmon.get_sensors():
             self.history[sensor].append((sensor.time, sensor.value))
+
+    def recreate_graphs(self):
+        self.clear_graphs()
+        self.create_graphs()
+
     
     def on_graph_change(self, *args):
         print("graph changed", *args)
@@ -126,7 +131,7 @@ def values(seq):
         for (t,v) in dq:
             yield v
 
-class GraphCanvas(Gtk.DrawingArea):
+class GraphCanvas(Gtk.Box):
     drawDark = GObject.Property(type=bool, default=False)
     graphSeconds = GObject.Property(type=int)
     pointer = (None, None, None)
@@ -136,19 +141,37 @@ class GraphCanvas(Gtk.DrawingArea):
     v_max = None
 
     def __init__(self, unit, hwmon):
-        super().__init__(hexpand=True, vexpand=True)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.unit = unit
         self.hwmon = hwmon
 
+        self.title = Gtk.Label()
+        self.format_title()
+        self.canvas = Gtk.DrawingArea(hexpand=True, vexpand=True)
+
         ctrl = Gtk.EventControllerMotion()
         ctrl.connect('motion', self.on_motion)
-        self.add_controller(ctrl)
+        self.canvas.add_controller(ctrl)
 
         gesture = Gtk.GestureClick()
         gesture.connect('released', self.on_click_released)
-        self.add_controller(gesture)
+        self.canvas.add_controller(gesture)
 
-        self.set_draw_func(self.draw, None)
+        self.canvas.set_draw_func(self.draw, None)
+
+        self.append(self.title)
+        self.append(self.canvas)
+    
+    def format_title(self):
+        if self.v_min is None or self.v_max is None:
+            self.title.set_text(self.unit.title())
+        else:
+            self.title.set_text("{} - Min: {} {} Max: {} {}".format(
+                self.unit.title(), self.v_min, str(self.unit),
+                self.v_max, str(self.unit)))
+    
+    def do_draw(self):
+        self.canvas.queue_draw()
     
     def sensors(self) -> list[Sensor]:
         return list(self.hwmon.get_sensors(graph=True, unit=self.unit.value))
@@ -157,8 +180,8 @@ class GraphCanvas(Gtk.DrawingArea):
         ns0 = monotonic_ns()
 
         if self.drawDark:
-            bg_color = (0.1, 0.1, 0.1)
-            fg_color = (0.2, 0.2, 0.2)
+            bg_color = (0.1, 0.12, 0.12)
+            fg_color = (0.3, 0.3, 0.3)
         else:
             bg_color = (0.964, 0.96, 0.913)
             fg_color = (0.8, 0.8, 0.8)
@@ -224,7 +247,7 @@ class GraphCanvas(Gtk.DrawingArea):
 
             if v0 < self.v_min:
                 self.v_min = v0
-            elif v0 > self.v_max:
+            if v0 > self.v_max:
                 self.v_max = v0
         
             c.move_to(translate_x(t0), translate_y(v0))
@@ -234,6 +257,8 @@ class GraphCanvas(Gtk.DrawingArea):
             c.stroke()
         
         ns3 = monotonic_ns() # time graph lines
+
+        self.format_title()
 
         print("Graph {} draw took {:1.2f}ms + {:1.2f}ms + {:1.2f}ms = {:1.2f}ms to draw ({} graph lines)"\
             .format(self.unit, (ns1-ns0)/1000000, (ns2-ns1)/1000000,(ns3-ns2)/1000000,
@@ -245,10 +270,10 @@ class GraphCanvas(Gtk.DrawingArea):
             self.v_min = 0
         else:
             self.v_min = min(values(
-                [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
+                [takewhile(lambda h: h[0] >= t_min, reversed(self.history[s])) for s in sensors]
                 ))
         self.v_max = max(values(
-            [takewhile(lambda h: h[0] > t_min, reversed(self.history[s])) for s in sensors]
+            [takewhile(lambda h: h[0] >= t_min, reversed(self.history[s])) for s in sensors]
             ))
         if self.v_min >= self.v_max:
             # Add some space when there is no/one value
@@ -257,10 +282,13 @@ class GraphCanvas(Gtk.DrawingArea):
     
     def get_info_at_coord(self, x, y):
         ns0 = monotonic_ns()
-        h = self.get_height()
-        w = self.get_width()
+        h = self.canvas.get_height()
+        w = self.canvas.get_width()
 
-        v = self.v_max - ((y/h) * (self.v_max - self.v_min))
+        v_min = self.v_min - (self.v_max-self.v_min) * 0.05
+        v_max = self.v_max + (self.v_max-self.v_min) * 0.05
+
+        v = v_max - ((y/h) * (v_max - v_min))
         t = self.t_min + ((x/w) * (self.t_max - self.t_min))
 
         line_distances = []
