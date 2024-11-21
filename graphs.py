@@ -3,7 +3,7 @@ from itertools import islice, takewhile, dropwhile, count, batched, groupby
 
 from gi.repository import Gtk, GObject
 
-from utils import Unit, monotonic_s
+from utils import Unit, monotonic_s, time_it
 from time import monotonic_ns
 from hwmon import Sensor
 
@@ -16,26 +16,27 @@ class Graphs(Gtk.Box):
         ("3 hours", 60 * 60 * 3),
     ]
     graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
-    drawDark = GObject.Property(type=bool, default=False)
+    darkStyle = GObject.Property(type=bool, default=False)
     history = defaultdict(lambda: deque([], 60 * 60 * 3))
 
-    def __init__(self, config, hwmon):
+    def __init__(self, app, config, hwmon):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.app = app
         self.config = config
         self.hwmon = hwmon
-        self.canvases = [] # populated with `create_graphs`
+        self.canvases = [] # populated with `self.create_graphs`
         
         self.paned = MultiPaned(config['graph_pane'])
 
-        timeselector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
-        timeselector.connect("notify::selected", self.on_time_selected)
+        timeSelector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
+        timeSelector.connect("notify::selected", self.on_time_selected)
 
         rescanMinMax = Gtk.Button.new_with_label("Rescan min/max")
         rescanMinMax.connect('clicked', self.on_rescan_min_max)
 
         self.append(self.paned)
         bottomBox = Gtk.Box(homogeneous=True)
-        bottomBox.append(timeselector)
+        bottomBox.append(timeSelector)
         bottomBox.append(rescanMinMax)
         self.append(bottomBox)
     
@@ -51,12 +52,11 @@ class Graphs(Gtk.Box):
         self.canvases = []
         graph_sensors = sorted(self.hwmon.get_sensors(graph=True), key=lambda s: s.unit)
         for unit, sensors in groupby(graph_sensors, key=lambda s: s.unit):
-            print("Creating canvas for {}".format(Unit(unit)))
-            canvas = GraphCanvas(Unit(unit), self.hwmon)
+            canvas = GraphCanvas(Unit(unit), self.hwmon, self.app)
             canvas.history = self.history
             canvas.app = self.app
             self.bind_property('graphSeconds', canvas, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
-            self.bind_property('drawDark', canvas, 'drawDark', GObject.BindingFlags.SYNC_CREATE)
+            self.bind_property('darkStyle', canvas, 'darkStyle', GObject.BindingFlags.SYNC_CREATE)
             self.canvases.append(canvas)
             self.paned.append(canvas)
 
@@ -66,11 +66,13 @@ class Graphs(Gtk.Box):
         for canvas in self.canvases:
             canvas.do_draw()
     
+    @time_it("Graphs refresh")
     def refresh(self):
         self.historize_sensors()
         for canvas in self.canvases:
             canvas.do_draw()
     
+    @time_it("historize_sensors")
     def historize_sensors(self):
         for sensor in self.hwmon.get_sensors():
             self.history[sensor].append((sensor.time, sensor.value))
@@ -84,6 +86,12 @@ class Graphs(Gtk.Box):
             canvas.scan_min_max(monotonic_s() - canvas.graphSeconds)
 
 class MultiPaned(Gtk.Paned):
+    """
+    A GTK4 Paned can only hold two widgets.
+    This class organizes Paned-within-Paned recursively allowing for
+    more widgets to be packed.
+    It also remembers the Paneds position (in absolute pixel vales)
+    """
     def __init__(self, config, widget=None):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, wide_handle=True, hexpand=True)
         self.config = config
@@ -92,11 +100,10 @@ class MultiPaned(Gtk.Paned):
 
         if widget is not None:
             self.set_start_child(widget)
-            print("Initializing MultiPaned with widget {}".format(widget.unit.name))
             self.set_config_position()
     
     def append(self, widget):
-        print("MultiPaned appending {}".format(widget.unit))
+        #print("MultiPaned appending {}".format(widget.unit))
         if self.get_start_child() is None:
             self.set_start_child(widget)
             self.set_config_position()
@@ -109,9 +116,7 @@ class MultiPaned(Gtk.Paned):
         child = self.get_start_child()
         position = self.get_position()
         if child:
-            print("MultiPaned {} position changed {}".format(child.unit.name, position))
             self.config[child.unit.name] = str(position)
-            self.config.write()
     
     def set_config_position(self):
         widget = self.get_start_child()
@@ -127,18 +132,22 @@ def values(seq):
             yield v
 
 class GraphCanvas(Gtk.Box):
-    drawDark = GObject.Property(type=bool, default=False)
+    darkStyle = GObject.Property(type=bool, default=False)
     graphSeconds = GObject.Property(type=int)
-    pointer = (None, None, None)
-    app = None
+    
+    _pointer = (None, None, None)
+    _value_min = None
+    _value_max = None
+    _viewport_margin = 0.025
 
-    v_min = None
-    v_max = None
+    _time_min = None
+    _time_max = None
 
-    def __init__(self, unit, hwmon):
+    def __init__(self, unit, hwmon, app):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.unit = unit
         self.hwmon = hwmon
+        self.app = app
 
         self.title = Gtk.Label()
         self.format_title()
@@ -158,12 +167,12 @@ class GraphCanvas(Gtk.Box):
         self.append(self.canvas)
     
     def format_title(self):
-        if self.v_min is None or self.v_max is None:
+        if self._value_min is None or self._value_max is None:
             self.title.set_text(self.unit.title())
         else:
             self.title.set_text("{} - Min: {} {} Max: {} {}".format(
-                self.unit.title(), self.v_min, str(self.unit),
-                self.v_max, str(self.unit)))
+                self.unit.title(), self._value_min, str(self.unit),
+                self._value_max, str(self.unit)))
     
     def do_draw(self):
         self.canvas.queue_draw()
@@ -172,9 +181,7 @@ class GraphCanvas(Gtk.Box):
         return list(self.hwmon.get_sensors(graph=True, unit=self.unit.value))
 
     def draw(self, area, c, w, h, data):
-        ns0 = monotonic_ns()
-
-        if self.drawDark:
+        if self.darkStyle:
             bg_color = (0.1, 0.12, 0.12)
             fg_color = (0.3, 0.3, 0.3)
         else:
@@ -187,18 +194,14 @@ class GraphCanvas(Gtk.Box):
         # time window that we are graphing
         t_min = monotonic_s() - self.graphSeconds
         t_max = monotonic_s()
-        
-        if self.v_min is None or self.v_max is None:
+        self._time_min = t_min
+        self._time_max = t_max
+
+        # The value range that we are plotting. Then add _
+        if self._value_min is None or self._value_max is None:
             self.scan_min_max(t_min)
-        v_min = self.v_min
-        v_max = self.v_max
-
-        # Add 5% on max and min
-        v_min -= (v_max-v_min)*0.05
-        v_max += (v_max-v_min)*0.05
-
-        self.t_min = t_min
-        self.t_max = t_max
+        v_min = self._value_min - (self._value_max - self._value_min) * self._viewport_margin
+        v_max = self._value_max + (self._value_max - self._value_min) * self._viewport_margin
 
         # Time -> Canvas x coord
         def translate_x(time: float) -> float:
@@ -208,8 +211,6 @@ class GraphCanvas(Gtk.Box):
         def translate_y(value: float) -> float:
             return h * (1 - ((value - v_min) / (v_max - v_min)))
         
-        ns1 = monotonic_ns() # time setup
-
         # Draw background lines
         c.select_font_face("Sans")
         c.set_font_size(16)
@@ -228,8 +229,6 @@ class GraphCanvas(Gtk.Box):
             c.stroke()
         c.set_dash([])
 
-        ns2 = monotonic_ns() # time background lines
-
         # Draw sensors
         c.set_line_width(2)
         lines_drawn = 0
@@ -240,51 +239,44 @@ class GraphCanvas(Gtk.Box):
             c.set_source_rgb(*sensor.RGB_triple())
             t0, v0 = next(hiter)
 
-            if v0 < self.v_min:
-                self.v_min = v0
-            if v0 > self.v_max:
-                self.v_max = v0
+            if v0 < self._value_min:
+                self._value_min = v0
+            if v0 > self._value_max:
+                self._value_max = v0
         
             c.move_to(translate_x(t0), translate_y(v0))
             for (t, v) in hiter:
                 c.line_to(translate_x(t), translate_y(v))
                 lines_drawn += 1
             c.stroke()
-        
-        ns3 = monotonic_ns() # time graph lines
-
         self.format_title()
-
-        print("Graph {} draw took {:1.2f}ms + {:1.2f}ms + {:1.2f}ms = {:1.2f}ms to draw ({} graph lines)"\
-            .format(self.unit, (ns1-ns0)/1000000, (ns2-ns1)/1000000,(ns3-ns2)/1000000,
-                               (ns3-ns0)/1000000, lines_drawn))
     
     def scan_min_max(self, t_min):
         sensors = self.sensors()
         if self.unit == Unit.RPM:
-            self.v_min = 0
+            self._value_min = 0
         else:
-            self.v_min = min(values(
+            self._value_min = min(values(
                 [takewhile(lambda h: h[0] >= t_min, reversed(self.history[s])) for s in sensors]
                 ))
-        self.v_max = max(values(
+        self._value_max = max(values(
             [takewhile(lambda h: h[0] >= t_min, reversed(self.history[s])) for s in sensors]
             ))
-        if self.v_min >= self.v_max:
+        if self._value_min >= self._value_max:
             # Add some space when there is no/one value
             # TODO: May be better to add some margin to graph lines instead
-            self.v_max = self.v_min + 1
+            self._value_max = self._value_min + 1
     
+    @time_it("Coord to Sensor value")
     def get_info_at_coord(self, x, y):
-        ns0 = monotonic_ns()
         h = self.canvas.get_height()
         w = self.canvas.get_width()
 
-        v_min = self.v_min - (self.v_max-self.v_min) * 0.05
-        v_max = self.v_max + (self.v_max-self.v_min) * 0.05
+        v_min = self._value_min - (self._value_max-self._value_min) * self._viewport_margin
+        v_max = self._value_max + (self._value_max-self._value_min) * self._viewport_margin
 
         v = v_max - ((y/h) * (v_max - v_min))
-        t = self.t_min + ((x/w) * (self.t_max - self.t_min))
+        t = self._time_min + ((x/w) * (self._time_max - self._time_min))
 
         line_distances = []
         for sensor in self.sensors():
@@ -297,25 +289,23 @@ class GraphCanvas(Gtk.Box):
             except StopIteration:
                 pass
         if not line_distances:
-            return
-        distance, sensor, time, value = sorted(line_distances, key=lambda a: a[0])[0]
-        ns1 = monotonic_ns()
-        #print("Motion calc took {:1.1}ms".format((ns1-ns0)/1000000))
+            return (None, None, None)
+        (distance, sensor, time, value) = sorted(line_distances, key=lambda a: a[0])[0]
         return sensor, time, value
         
     def on_motion(self, ctrl, x, y):
-        info = self.get_info_at_coord(x, y)
-        if info:
-            sensor, time, value = info
+        (sensor, time, value) = self.get_info_at_coord(x, y)
+        if sensor:
             self.set_tooltip_text("{} {}{}".format(sensor.name, value, Unit(sensor.unit)))
-            self.pointer = time, sensor, value
+            self._pointer = (time, sensor, value)
         else:
             self.set_tooltip_text(None)
 
-    def on_click_released(self, gesture, click_n, x, y):
-        print("Clicked {}".format(click_n, x, y))
-
-        info = self.get_info_at_coord(x, y)
-        if info and click_n == 1:
-            sensor, time, value = info
+    def on_click_released(self, gesture, n_press, x, y):
+        if n_press != 1:
+            # `n_press` is "number of presses with this release" which will increase
+            # for each press, so we ignore subsequent presses here
+            return
+        (sensor, time, value) = self.get_info_at_coord(x, y)
+        if sensor:
             self.app.select_sensor(sensor)

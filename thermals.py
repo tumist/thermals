@@ -10,6 +10,7 @@ import configparser
 
 from graphs import Graphs
 from hwmon import Hwmon
+from utils import time_it
 
 class Config(configparser.ConfigParser):
     def __init__(self, *args, **kw):
@@ -32,6 +33,7 @@ class Config(configparser.ConfigParser):
         return section
 
 class MainWindow(Gtk.ApplicationWindow):
+    @time_it("Initialize MainWindow")
     def __init__(self, application=None):
         super().__init__(application=application)
         self.app = application
@@ -42,14 +44,15 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config['DEFAULT']['color'] = "rgb(127, 127, 127)"
         self.config['DEFAULT']['graph'] = 'True'
 
+        self.connect('close-request', lambda *args: self.config.write())
+
         self.hwmon = Hwmon(self, self.config)
-        self.graph = Graphs(self.config, self.hwmon)
-        self.graph.app = self
+        self.graph = Graphs(self, self.config, self.hwmon)
 
         self.graph.create_graphs()
         
         self.app.get_style_manager()\
-            .bind_property('dark', self.graph, 'drawDark',
+            .bind_property('dark', self.graph, 'darkStyle',
                            GObject.BindingFlags.SYNC_CREATE)
         
         hbox = Gtk.Box()
@@ -80,13 +83,8 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def on_timer(self):
         GLib.timeout_add(2000, self.on_timer)
-        t0 = monotonic_ns()
         self.hwmon.refresh()
-        t1 = monotonic_ns()
         self.graph.refresh()
-        t2 = monotonic_ns()
-        print("Sensor refresh took {:1.1f}ms".format((t1-t0)/1000000))
-        print("Graph refresh took {:1.1f}ms".format((t2-t1)/1000000))
     
     def select_sensor(self, sensor):
         self.hwmon.select_sensor(sensor)
@@ -102,4 +100,4 @@ class MyApp(Adw.Application):
 
 if __name__ == "__main__":
     app = MyApp(application_id="is.tum.Thermals")
-    app.run(sys.argv)
+    app.run(None)

@@ -4,7 +4,7 @@ from os.path import basename
 import os.path
 from collections.abc import Iterator
 
-from utils import Unit, readlineStrip, readGio
+from utils import Unit, readlineStrip, readGio, time_it
 from sensor import Sensor
 
 def convertTemp(inp: str):
@@ -26,6 +26,7 @@ class Hwmon(Gtk.Box):
             self.devices.append(device)
             self.append(device)
     
+    @time_it("Hwmon refresh")
     def refresh(self):
         for sensor in self.get_sensors():
             sensor.refresh()
@@ -132,8 +133,6 @@ class HwmonDevice(Gtk.Expander):
             name = power.split('_')[0]
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Power(self, name, cfg)
-        else:
-            print("Found no power sensors")
     
     def select_sensor(self, sensor: Sensor):
         print("Selecting sensor {}".format(sensor))

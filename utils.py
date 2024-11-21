@@ -1,3 +1,4 @@
+import sys
 from gi.repository import Gio
 from enum import Enum
 from time import monotonic_ns
@@ -44,3 +45,18 @@ def readGio(path, func = lambda x: x, decode = 'utf-8'):
             contents = contents.decode(decode)
         return func(contents.strip())
     return inner
+
+def time_it(explain):
+    def wrap(f):
+        def inner(*args, **kw):
+            ns0 = monotonic_ns()
+            ret = f(*args, **kw)
+            ns1 = monotonic_ns()
+            print("{} took {:1.2f}ms".format(explain, (ns1-ns0)/1000000))
+            return ret
+        
+        if "--time-it" in sys.argv:
+            return inner
+        else:
+            return f
+    return wrap
