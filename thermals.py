@@ -35,7 +35,7 @@ class Config(configparser.ConfigParser):
 class MainWindow(Gtk.ApplicationWindow):
     @time_it("Initialize MainWindow")
     def __init__(self, application=None):
-        super().__init__(application=application)
+        super().__init__(application=application, title="Thermals")
         self.app = application
 
         self.config = Config()
@@ -92,10 +92,12 @@ class MainWindow(Gtk.ApplicationWindow):
 class MyApp(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.win = None
         self.connect('activate', self.on_activate)
 
     def on_activate(self, app):
-        self.win = MainWindow(application=app)
+        if not self.win:
+            self.win = MainWindow(application=app)
         self.win.present()
 
 if __name__ == "__main__":
