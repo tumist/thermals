@@ -1,4 +1,4 @@
-from gi.repository import Gtk, GObject, Gio
+from gi.repository import Gtk, GObject, Gio, GLib
 import glob # TODO: Use regexp
 from os.path import basename
 import os.path
@@ -180,7 +180,7 @@ class Temperature(HwmonSensor):
             #label = readStrip(os.path.join(self.device.dir, self.measurement + "_label"))
             label = readGio(os.path.join(self.device.dir, self.measurement + "_label"))()
             self.name = label
-        except FileNotFoundError:
+        except (FileNotFoundError, GLib.GError):
             pass
 
     def get_value(self):
