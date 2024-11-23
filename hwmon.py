@@ -1,5 +1,5 @@
 from gi.repository import Gtk, GObject, Gio
-import glob # TODO: Use regexp
+import glob
 from os.path import basename
 import os.path
 from collections.abc import Iterator
@@ -15,17 +15,18 @@ def convertWatt(inp: str):
 
 class Hwmon(Gtk.Box):
     def __init__(self, app, config):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.app = app
         self.config = config
-        super().__init__(orientation=Gtk.Orientation.VERTICAL)
-
         self.devices = []
+        
+        # TODO: Use regexp to catch more than 10 hwmon interfaces
         for dir in glob.glob("/sys/class/hwmon/hwmon[0-9]"):
             device = HwmonDevice(dir, config)
             device.app = self.app
             self.devices.append(device)
             self.append(device)
-    
+            
     @time_it("Hwmon refresh")
     def refresh(self):
         for sensor in self.get_sensors():

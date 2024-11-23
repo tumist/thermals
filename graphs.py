@@ -168,9 +168,9 @@ class GraphCanvas(Gtk.Box):
     
     def format_title(self):
         if self._value_min is None or self._value_max is None:
-            self.title.set_text(self.unit.title())
+            self.title.set_markup("<b>{}</b>".format(self.unit.title()))
         else:
-            self.title.set_text("{} - Min: {} {} Max: {} {}".format(
+            self.title.set_markup("<b>{}</b>  Min: {} {} Max: {} {}".format(
                 self.unit.title(), self._value_min, str(self.unit),
                 self._value_max, str(self.unit)))
     

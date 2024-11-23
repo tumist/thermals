@@ -43,10 +43,25 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config['DEFAULT']['expanded'] = 'True'
         self.config['DEFAULT']['color'] = "rgb(127, 127, 127)"
         self.config['DEFAULT']['graph'] = 'True'
-
+        # Makes sure the config is written when MainWindow is closed
         self.connect('close-request', lambda *args: self.config.write())
 
+        # Restore window size
+        try:
+            width = self.config.getint('window', 'width')
+            height = self.config.getint('window', 'height')
+        except configparser.NoSectionError:
+            width = 900
+            height = 600
+        self.set_default_size(width, height)
+        # Save window size
+        self.connect("notify::default-width", self.on_notify_default_size)
+        self.connect("notify::default-height", self.on_notify_default_size)
+
         self.hwmon = Hwmon(self, self.config)
+        if not self.hwmon.devices:
+            self.show_hwmon_error_message()
+            return
         self.graph = Graphs(self, self.config, self.hwmon)
 
         self.graph.create_graphs()
@@ -61,20 +76,15 @@ class MainWindow(Gtk.ApplicationWindow):
         hbox.append(self.graph)
         self.set_child(hbox)
 
-        # Restore window size
-        try:
-            width = self.config.getint('window', 'width')
-            height = self.config.getint('window', 'height')
-        except configparser.NoSectionError:
-            width = 900
-            height = 600
-        self.set_default_size(width, height)
-        # Save window size
-        self.connect("notify::default-width", self.on_notify_default_size)
-        self.connect("notify::default-height", self.on_notify_default_size)
-        
         # kickoff sensor update timer
         self.on_timer()
+    
+    def show_hwmon_error_message(self):
+        cbox = Gtk.CenterBox()
+        msg = Gtk.Label()
+        msg.set_markup("Thermals could not find any hwmon devices under /sys/class/hwmon/")
+        cbox.set_center_widget(msg)
+        self.set_child(cbox)
     
     def on_notify_default_size(self, *args):
         w, h = self.get_default_size()
@@ -102,4 +112,5 @@ class MyApp(Adw.Application):
 
 if __name__ == "__main__":
     app = MyApp(application_id="is.tum.Thermals")
-    app.run(None)
+    exit_status = app.run(None)
+    sys.exit(exit_status)
