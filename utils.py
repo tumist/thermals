@@ -23,7 +23,7 @@ class Unit(Enum):
             case Unit.PWM: return "PWM"
             case Unit.WATT: return "Watt"
 
-    def graph_lines(self) -> int:
+    def plot_lines(self) -> int:
         match self:
             case Unit.RPM: return 250
             case Unit.CELCIUS: return 10

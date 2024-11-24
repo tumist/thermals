@@ -9,7 +9,7 @@ class Sensor(GObject.Object):
     #value = GObject.Property(type=int)
     valueStr = GObject.Property(type=str)
     time = GObject.Property(type=int)
-    graph = GObject.Property(type=bool, default=False)
+    plot = GObject.Property(type=bool, default=False)
     color = GObject.Property(type=Gdk.RGBA)
     unit = GObject.Property(type=int)
 
@@ -20,12 +20,12 @@ class Sensor(GObject.Object):
 
         self.color = Gdk.RGBA()
         self.color.parse(config['color'])
-        self.graph = config.getboolean('graph')
+        self.plot = config.getboolean('plot')
 
         self.value = self.get_value()
         self.format_valueStr()
 
-        self.connect('notify::graph', self.on_graph)
+        self.connect('notify::plot', self.on_plot)
     
     def __repr__(self):
         return "Sensor {} {}{}".format(self.name, self.valueStr, self.unit)
@@ -52,6 +52,6 @@ class Sensor(GObject.Object):
     def RGB_triple(self):
         return (self.color.red, self.color.green, self.color.blue)
 
-    def on_graph(self, *a):
-        self.config['graph'] = str(self.graph)
+    def on_plot(self, *a):
+        self.config['plot'] = str(self.plot)
         self.config.write()

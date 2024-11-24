@@ -88,8 +88,8 @@ class HwmonDevice(Gtk.Expander):
                     item.set_child(label)
                     item.get_item().bind_property("valueStr", item.get_child(), "label",
                                                   GObject.BindingFlags.SYNC_CREATE)
-                elif item_property == "graph":
-                    check = Gtk.CheckButton(active=item.get_item().graph)
+                elif item_property == "plot":
+                    check = Gtk.CheckButton(active=item.get_item().plot)
                     colorDialog = Gtk.ColorDialog(with_alpha=False)
                     color = Gtk.ColorDialogButton(dialog=colorDialog, rgba=item.get_item().color)
                     color.connect("notify::rgba", lambda *a: item.get_item().set_color_rgba(color.get_rgba()))
@@ -98,9 +98,9 @@ class HwmonDevice(Gtk.Expander):
                     box.append(check)
                     box.append(color)
                     item.set_child(box)
-                    item.get_item().bind_property("graph", check, "active",
+                    item.get_item().bind_property("plot", check, "active",
                                                   GObject.BindingFlags.BIDIRECTIONAL)
-                    item.get_item().connect("notify::graph", lambda *args: self.app.graph.recreate_graphs())
+                    item.get_item().connect("notify::plot", lambda *args: self.app.plots.recreate_plots())
 
             factory.connect('bind', factory_bind)
             column = Gtk.ColumnViewColumn(title=column_title, factory=factory, **kw)
@@ -108,7 +108,7 @@ class HwmonDevice(Gtk.Expander):
         
         setup_factory("Name", "name", expand=True)
         setup_factory("Value", "valueStr")
-        setup_factory("Graph", "graph")
+        setup_factory("Plot", "plot")
 
         self.store = store
         self.set_child(self.view)
@@ -137,10 +137,10 @@ class HwmonDevice(Gtk.Expander):
             yield Power(self, name, cfg)
     
     def select_sensor(self, sensor: Sensor):
-        print("Selecting sensor {}".format(sensor))
+        #print("Selecting sensor {}".format(sensor))
         for (i, s) in enumerate(self.store):
             if s == sensor:
-                print("Found sensor at position {}".format(i))
+                #print("Found sensor at position {}".format(i))
                 #self.view.scroll_to(i, None, Gtk.ListScrollFlags.SELECT)
                 self.set_expanded(True)
                 self.ss.set_selected(i)
@@ -152,13 +152,13 @@ class HwmonDevice(Gtk.Expander):
         self.config_section['expanded'] = str(self.get_property('expanded'))
         self.config.write()
 
-    def get_sensors(self, graph : bool | None = None, unit : int | None = None):
+    def get_sensors(self, plot : bool | None = None, unit : int | None = None):
         """Return sensors using filters.
         
         No filters -> All sensors
         """
         for item in self.store:
-            if graph != None and item.graph != graph:
+            if plot != None and item.plot != plot:
                 continue
             if unit != None and item.unit != unit:
                 continue

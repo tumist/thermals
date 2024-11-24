@@ -7,7 +7,7 @@ from utils import Unit, monotonic_s, time_it
 from time import monotonic_ns
 from hwmon import Sensor
 
-class Graphs(Gtk.Box):
+class Plots(Gtk.Box):
     timeSelections = [
         ("3 mins", 60 * 3),
         ("10 mins", 60 * 10),
@@ -15,7 +15,7 @@ class Graphs(Gtk.Box):
         ("1 hour", 60 * 60),
         ("3 hours", 60 * 60 * 3),
     ]
-    graphSeconds = GObject.Property(type=int, default=timeSelections[0][1])
+    plotSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     darkStyle = GObject.Property(type=bool, default=False)
     history = defaultdict(lambda: deque([], 60 * 60 * 3))
 
@@ -24,9 +24,9 @@ class Graphs(Gtk.Box):
         self.app = app
         self.config = config
         self.hwmon = hwmon
-        self.canvases = [] # populated with `self.create_graphs`
+        self.canvases = [] # populated with `self.create_plots`
         
-        self.paned = MultiPaned(config['graph_pane'])
+        self.paned = MultiPaned(config['plot_pane'])
 
         timeSelector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
         timeSelector.connect("notify::selected", self.on_time_selected)
@@ -40,33 +40,33 @@ class Graphs(Gtk.Box):
         bottomBox.append(rescanMinMax)
         self.append(bottomBox)
     
-    def clear_graphs(self):
+    def clear_plots(self):
         self.remove(self.paned)
-        self.paned = MultiPaned(self.config['graph_pane'])
+        self.paned = MultiPaned(self.config['plot_pane'])
         self.prepend(self.paned)
         self.canvases = []
     
-    def create_graphs(self):
+    def create_plots(self):
         if hasattr(self, 'canvases') and self.canvases:
             print("WARNING: canvases is not empty")
         self.canvases = []
-        graph_sensors = sorted(self.hwmon.get_sensors(graph=True), key=lambda s: s.unit)
-        for unit, sensors in groupby(graph_sensors, key=lambda s: s.unit):
-            canvas = GraphCanvas(Unit(unit), self.hwmon, self.app)
+        plot_sensors = sorted(self.hwmon.get_sensors(plot=True), key=lambda s: s.unit)
+        for unit, sensors in groupby(plot_sensors, key=lambda s: s.unit):
+            canvas = PlotCanvas(Unit(unit), self.hwmon, self.app)
             canvas.history = self.history
             canvas.app = self.app
-            self.bind_property('graphSeconds', canvas, 'graphSeconds', GObject.BindingFlags.SYNC_CREATE)
+            self.bind_property('plotSeconds', canvas, 'plotSeconds', GObject.BindingFlags.SYNC_CREATE)
             self.bind_property('darkStyle', canvas, 'darkStyle', GObject.BindingFlags.SYNC_CREATE)
             self.canvases.append(canvas)
             self.paned.append(canvas)
 
     def on_time_selected(self, dropdown, _):
         selected = dropdown.get_property("selected")
-        self.graphSeconds = self.timeSelections[selected][1]
+        self.plotSeconds = self.timeSelections[selected][1]
         for canvas in self.canvases:
             canvas.do_draw()
     
-    @time_it("Graphs refresh")
+    @time_it("Plots refresh")
     def refresh(self):
         self.historize_sensors()
         for canvas in self.canvases:
@@ -77,13 +77,13 @@ class Graphs(Gtk.Box):
         for sensor in self.hwmon.get_sensors():
             self.history[sensor].append((sensor.time, sensor.value))
 
-    def recreate_graphs(self):
-        self.clear_graphs()
-        self.create_graphs()
+    def recreate_plots(self):
+        self.clear_plots()
+        self.create_plots()
     
     def on_rescan_min_max(self, *args):
         for canvas in self.canvases:
-            canvas.scan_min_max(monotonic_s() - canvas.graphSeconds)
+            canvas.scan_min_max(monotonic_s() - canvas.plotSeconds)
 
 class MultiPaned(Gtk.Paned):
     """
@@ -131,9 +131,9 @@ def values(seq):
         for (t,v) in dq:
             yield v
 
-class GraphCanvas(Gtk.Box):
+class PlotCanvas(Gtk.Box):
     darkStyle = GObject.Property(type=bool, default=False)
-    graphSeconds = GObject.Property(type=int)
+    plotSeconds = GObject.Property(type=int)
     
     _pointer = (None, None, None)
     _value_min = None
@@ -178,7 +178,7 @@ class GraphCanvas(Gtk.Box):
         self.canvas.queue_draw()
     
     def sensors(self) -> list[Sensor]:
-        return list(self.hwmon.get_sensors(graph=True, unit=self.unit.value))
+        return list(self.hwmon.get_sensors(plot=True, unit=self.unit.value))
 
     def draw(self, area, c, w, h, data):
         if self.darkStyle:
@@ -191,8 +191,8 @@ class GraphCanvas(Gtk.Box):
         c.set_source_rgb(*bg_color)
         c.paint()
 
-        # time window that we are graphing
-        t_min = monotonic_s() - self.graphSeconds
+        # time window that we are plotting
+        t_min = monotonic_s() - self.plotSeconds
         t_max = monotonic_s()
         self._time_min = t_min
         self._time_max = t_max
@@ -216,7 +216,7 @@ class GraphCanvas(Gtk.Box):
         c.set_font_size(16)
         y_lines = list(takewhile(lambda v: v <= v_max, 
                     dropwhile(lambda v: v < v_min, 
-                        count(0, self.unit.graph_lines()))))
+                        count(0, self.unit.plot_lines()))))
         while len(y_lines) > 2 and h / len(y_lines) < 40:
             y_lines = y_lines[::2]
         for line in y_lines:
@@ -264,7 +264,7 @@ class GraphCanvas(Gtk.Box):
             ))
         if self._value_min >= self._value_max:
             # Add some space when there is no/one value
-            # TODO: May be better to add some margin to graph lines instead
+            # TODO: May be better to add some margin to plot lines instead
             self._value_max = self._value_min + 1
     
     @time_it("Coord to Sensor value")

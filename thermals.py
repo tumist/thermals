@@ -8,7 +8,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GObject, GLib
 import configparser
 
-from graphs import Graphs
+from plots import Plots
 from hwmon import Hwmon
 from utils import time_it
 
@@ -42,7 +42,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config.read()
         self.config['DEFAULT']['expanded'] = 'True'
         self.config['DEFAULT']['color'] = "rgb(127, 127, 127)"
-        self.config['DEFAULT']['graph'] = 'True'
+        self.config['DEFAULT']['plot'] = 'True'
         # Makes sure the config is written when MainWindow is closed
         self.connect('close-request', lambda *args: self.config.write())
 
@@ -62,18 +62,18 @@ class MainWindow(Gtk.ApplicationWindow):
         if not self.hwmon.devices:
             self.show_hwmon_error_message()
             return
-        self.graph = Graphs(self, self.config, self.hwmon)
+        self.plots = Plots(self, self.config, self.hwmon)
 
-        self.graph.create_graphs()
+        self.plots.create_plots()
         
         self.app.get_style_manager()\
-            .bind_property('dark', self.graph, 'darkStyle',
+            .bind_property('dark', self.plots, 'darkStyle',
                            GObject.BindingFlags.SYNC_CREATE)
         
         hbox = Gtk.Box()
         hbox.append(Gtk.ScrolledWindow(
             child=self.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        hbox.append(self.graph)
+        hbox.append(self.plots)
         self.set_child(hbox)
 
         # kickoff sensor update timer
@@ -94,7 +94,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def on_timer(self):
         GLib.timeout_add(2000, self.on_timer)
         self.hwmon.refresh()
-        self.graph.refresh()
+        self.plots.refresh()
     
     def select_sensor(self, sensor):
         self.hwmon.select_sensor(sensor)
