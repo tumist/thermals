@@ -84,6 +84,7 @@ class Plots(Gtk.Box):
     def on_rescan_min_max(self, *args):
         for canvas in self.canvases:
             canvas.scan_min_max(monotonic_s() - canvas.plotSeconds)
+            canvas.do_draw()
 
 class MultiPaned(Gtk.Paned):
     """
@@ -135,9 +136,18 @@ class PlotCanvas(Gtk.Box):
     darkStyle = GObject.Property(type=bool, default=False)
     plotSeconds = GObject.Property(type=int)
     
-    _pointer = (None, None, None)
+    #_pointer = (None, None, None)
+
+    # These are the mins and max of values in this plot, updated by
+    # `draw` or `scan_min_max`.
+    # However, although the values are historized on every timer and
+    # a redraw is queued, it is not necessarily drawn and therefor not
+    # guaranteed to be updated by `draw`. That's why there still is a
+    # "Rescan min/max" button on the interface.
     _value_min = None
     _value_max = None
+    # Margin added to the minimum and maximum so the line
+    # isn't drawn right on the edge.
     _viewport_margin = 0.025
 
     _time_min = None
