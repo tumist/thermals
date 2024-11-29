@@ -94,7 +94,8 @@ class MultiPaned(Gtk.Paned):
     It also remembers the Paneds position (in absolute pixel vales)
     """
     def __init__(self, config, widget=None):
-        super().__init__(orientation=Gtk.Orientation.VERTICAL, wide_handle=True, hexpand=True)
+        super().__init__(orientation=Gtk.Orientation.VERTICAL, wide_handle=True, hexpand=True,
+                         shrink_start_child=False, shrink_end_child=False)
         self.config = config
 
         self.connect("notify::position", self.on_position_changed)
@@ -104,7 +105,6 @@ class MultiPaned(Gtk.Paned):
             self.set_config_position()
     
     def append(self, widget):
-        #print("MultiPaned appending {}".format(widget.unit))
         if self.get_start_child() is None:
             self.set_start_child(widget)
             self.set_config_position()
