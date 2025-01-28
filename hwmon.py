@@ -5,7 +5,7 @@ from os.path import basename
 import os.path
 from collections.abc import Iterator
 
-from utils import Unit, readlineStrip, readGio, time_it
+from utils import Unit, readlineStrip, readGio, time_it, empty
 from sensor import Sensor
 
 def convertTemp(inp: str):
@@ -25,8 +25,12 @@ class Hwmon(Gtk.Box):
         for dir in glob.glob("/sys/class/hwmon/hwmon[0-9]"):
             device = HwmonDevice(dir, config)
             device.app = self.app
-            self.devices.append(device)
-            self.append(device)
+            if empty(device.get_sensors()):
+                print("Found no sensors in {}".format(dir))
+                continue
+            else:
+                self.devices.append(device)
+                self.append(device)
             
     @time_it("Hwmon refresh")
     def refresh(self):

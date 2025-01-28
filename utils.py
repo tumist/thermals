@@ -2,6 +2,7 @@ import sys
 from gi.repository import Gio
 from enum import Enum
 from time import monotonic_ns
+from collections.abc import Iterator
 
 class Unit(Enum):
     CELCIUS = 0
@@ -60,3 +61,10 @@ def time_it(explain):
         else:
             return f
     return wrap
+
+def empty(gen: Iterator) -> bool:
+    try:
+        next(gen)
+        return False
+    except StopIteration:
+        return True
