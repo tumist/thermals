@@ -31,13 +31,13 @@ class Plots(Gtk.Box):
         timeSelector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
         timeSelector.connect("notify::selected", self.on_time_selected)
 
-        rescanMinMax = Gtk.Button.new_with_label("Rescan min/max")
-        rescanMinMax.connect('clicked', self.on_rescan_min_max)
+        clearMinMax = Gtk.Button.new_with_label("Clear Min/Max")
+        clearMinMax.connect('clicked', self.on_clear_min_max)
 
         self.append(self.paned)
         bottomBox = Gtk.Box(homogeneous=True)
         bottomBox.append(timeSelector)
-        bottomBox.append(rescanMinMax)
+        bottomBox.append(clearMinMax)
         self.append(bottomBox)
     
     def clear_plots(self):
@@ -81,8 +81,9 @@ class Plots(Gtk.Box):
         self.clear_plots()
         self.create_plots()
     
-    def on_rescan_min_max(self, *args):
+    def on_clear_min_max(self, *args):
         for canvas in self.canvases:
+            canvas.clear_min_max()
             canvas.scan_min_max(monotonic_s() - canvas.plotSeconds)
             canvas.do_draw()
 
@@ -143,7 +144,7 @@ class PlotCanvas(Gtk.Box):
     # However, although the values are historized on every timer and
     # a redraw is queued, it is not necessarily drawn and therefor not
     # guaranteed to be updated by `draw`. That's why there still is a
-    # "Rescan min/max" button on the interface.
+    # "Clear Min/Max" button on the interface, which rescans the history.
     _value_min = None
     _value_max = None
     # Margin added to the minimum and maximum so the line
@@ -261,6 +262,11 @@ class PlotCanvas(Gtk.Box):
             c.stroke()
         self.format_title()
     
+    def clear_min_max(self):
+        self._value_min = None
+        self._value_max = None
+        self.format_title()
+
     def scan_min_max(self, t_min):
         sensors = self.sensors()
         if self.unit == Unit.RPM:
