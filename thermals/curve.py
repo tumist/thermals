@@ -6,7 +6,7 @@ from gi.repository import Gtk, Adw, GObject, GLib
 from cairo import Matrix
 from math import dist
 from itertools import takewhile, dropwhile, count
-from utils import Unit
+from thermals.utils import Unit
 
 class Curve(Gtk.DrawingArea):
     darkStyle = False

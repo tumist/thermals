@@ -3,9 +3,9 @@ from itertools import islice, takewhile, dropwhile, count, batched, groupby
 
 from gi.repository import Gtk, GObject
 
-from utils import Unit, monotonic_s, time_it
+from thermals.utils import Unit, monotonic_s, time_it
 from time import monotonic_ns
-from hwmon import Sensor
+from thermals.sensor import Sensor
 
 class Plots(Gtk.Box):
     timeSelections = [

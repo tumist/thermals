@@ -2,7 +2,7 @@ from gi.repository import GObject, Gdk
 
 from time import monotonic_ns
 
-from utils import Unit, monotonic_s
+from thermals.utils import Unit, monotonic_s
 
 class Sensor(GObject.Object):
     name = GObject.Property(type=str)

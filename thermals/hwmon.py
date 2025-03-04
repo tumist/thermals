@@ -5,8 +5,8 @@ from os.path import basename
 import os.path
 from collections.abc import Iterator
 
-from utils import Unit, readlineStrip, readGio, time_it, empty
-from sensor import Sensor
+from thermals.utils import Unit, readlineStrip, readGio, time_it, empty
+from thermals.sensor import Sensor
 
 def convertTemp(inp: str):
     return float(inp) / 1000.0
