@@ -12,6 +12,8 @@ from thermals.plots import Plots
 from thermals.hwmon import Hwmon
 from thermals.utils import time_it
 
+HWMON_READ_INTERVAL = 2000
+
 class Config(configparser.ConfigParser):
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
@@ -92,7 +94,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.config['window']['height'] = str(h)
 
     def on_timer(self):
-        GLib.timeout_add(2000, self.on_timer)
+        GLib.timeout_add(HWMON_READ_INTERVAL, self.on_timer)
         self.hwmon.refresh()
         self.plots.refresh()
     

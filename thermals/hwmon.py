@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 from thermals.utils import Unit, readlineStrip, readGio, time_it, empty
 from thermals.sensor import Sensor
+from thermals.curve import CurveHwmonWindow
 
 def convertTemp(inp: str):
     return float(inp) / 1000.0
@@ -86,7 +87,17 @@ class HwmonDevice(Gtk.Expander):
 
             def factory_bind(_, item):
                 if item_property == "name":
-                    item.set_child(Gtk.Label(label=item.get_item().get_property(item_property), xalign=0))
+                    sensor = item.get_item()
+                    if sensor.has_configuration():
+                        box = Gtk.Box()
+                        label = Gtk.Label(label=sensor.get_property(item_property), hexpand=True, xalign=0)
+                        cfg = Gtk.Button.new_from_icon_name("preferences-system")
+                        cfg.connect('clicked', lambda *a: sensor.configure())
+                        box.append(label)
+                        box.append(cfg)
+                        item.set_child(box)
+                    else:
+                        item.set_child(Gtk.Label(label=sensor.get_property(item_property), xalign=0))
                 elif item_property == "valueStr":
                     label = Gtk.Label(label=item.get_item().get_property(item_property))
                     item.set_child(label)
@@ -135,16 +146,15 @@ class HwmonDevice(Gtk.Expander):
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Pwm(self, name, cfg)
         
-        for power in glob.glob("power[0-9]_average", root_dir=self.dir):
+        for power in glob.glob("power[0-9]_label", root_dir=self.dir):
             name = power.split('_')[0]
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Power(self, name, cfg)
+
     
     def select_sensor(self, sensor: Sensor):
-        #print("Selecting sensor {}".format(sensor))
         for (i, s) in enumerate(self.store):
             if s == sensor:
-                #print("Found sensor at position {}".format(i))
                 #self.view.scroll_to(i, None, Gtk.ListScrollFlags.SELECT)
                 self.set_expanded(True)
                 self.ss.set_selected(i)
@@ -173,21 +183,21 @@ class HwmonSensor(Sensor):
         self.device = device
         self.measurement = measurement
         super().__init__(measurement, config)
-    
-    def format_valueStr(self):
-        self.valueStr = self.format()
-
-class Temperature(HwmonSensor):
-    unit = Unit.CELCIUS.value
-
-    def __init__(self, *args):
-        super().__init__(*args)
         try:
             #label = readStrip(os.path.join(self.device.dir, self.measurement + "_label"))
             label = readGio(os.path.join(self.device.dir, self.measurement + "_label"))()
             self.name = label
         except (FileNotFoundError, GLib.GError):
             pass
+    
+    def format_valueStr(self):
+        self.valueStr = self.format()
+    
+    def has_configuration(self):
+        return False
+
+class Temperature(HwmonSensor):
+    unit = Unit.CELCIUS.value
 
     def get_value(self):
         # return convertTemp(readlineStrip(
@@ -220,13 +230,24 @@ class Pwm(HwmonSensor):
     def format(self):
         return "{}{}".format(self.value, Unit(self.unit))
 
+    def has_configuration(self):
+        full_path = os.path.join(self.device.dir, self.measurement)
+        return os.path.exists(full_path + "_auto_point1_pwm")
+
+    def configure(self):
+        win = CurveHwmonWindow(path=os.path.join(self.device.dir, self.measurement))
+        win.present()
+
+
 class Power(HwmonSensor):
     unit = Unit.WATT.value
     def get_value(self):
         # return convertWatt(readlineStrip(
         #     os.path.join(self.device.dir, self.measurement + "_average")
         # ))
-        return readGio(os.path.join(self.device.dir, self.measurement + "_average"),
-                       func = convertWatt)()
+        if os.path.exists(os.path.join(self.device.dir, self.measurement + "_average")):
+            return readGio(os.path.join(self.device.dir, self.measurement + "_average"), func = convertWatt)()
+        else:
+            return readGio(os.path.join(self.device.dir, self.measurement + "_input"), func = convertWatt)()
     def format(self):
         return "{}{}".format(self.value, Unit(self.unit))

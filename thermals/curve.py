@@ -5,8 +5,10 @@ from gi.repository import Gtk, Adw, GObject, GLib
 
 from cairo import Matrix
 from math import dist
+import sys
 from itertools import takewhile, dropwhile, count
-from thermals.utils import Unit
+from thermals.utils import Unit, readlineStrip
+import subprocess
 
 class Curve(Gtk.DrawingArea):
     darkStyle = False
@@ -225,10 +227,14 @@ class CurveApp(Adw.Application):
         super().__init__(**kwargs)
         self.win = None
         self.connect('activate', self.on_activate)
+        if len(sys.argv) == 2:
+            self.windowCls = CurveHwmonWindow
+        else:
+            self.windowCls = CurveWindow
 
     def on_activate(self, app):
         if not self.win:
-            self.win = CurveWindow(application=app)
+            self.win = self.windowCls(application=app)
         self.win.present()
 
 class CurveWindow(Gtk.ApplicationWindow):
@@ -240,6 +246,49 @@ class CurveWindow(Gtk.ApplicationWindow):
         self.box.append(self.curve)
         self.set_child(self.box)
         self.curve.queue_draw()
+
+class CurveHwmonWindow(Gtk.ApplicationWindow):
+    def __init__(self, application=None, path=None):
+        super().__init__(application=application, title="Curve")
+        self.set_default_size(900, 600)
+        self.path = path
+        data = self.read_data_points()
+        print(data)
+        self.curve = Curve(data=data, y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
+        writeData = Gtk.Button.new_with_label("Write values")
+        writeData.connect('clicked', self.write_data_points)
+
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.box.append(self.curve)
+        self.box.append(writeData)
+        self.set_child(self.box)
+        self.curve.queue_draw()
+    
+    def read_data_points(self):
+        path = self.path or sys.argv[1]
+        data = []
+        for i in range(1,6):
+            temp = readlineStrip("{}_auto_point{}_temp".format(path, i))
+            pwm = readlineStrip("{}_auto_point{}_pwm".format(path, i))
+            data.append((int(temp) // 1000, int(pwm)))
+        return data
+    
+    def write_data_points(self, *args, **kw):
+        path = self.path or sys.argv[1]
+        data = self.curve.data
+        commands = []
+        for i in range(0,5):
+            temp = "echo {:0.0f}000 > {}_auto_point{}_temp".format(data[i][0], path, i+1)
+            pwm = "echo {:0.0f} > {}_auto_point{}_pwm".format(data[i][1], path, i+1)
+            print(temp)
+            commands.append(temp)
+            print(pwm)
+            commands.append(pwm)
+        script = " && ".join(commands)
+        print(script)
+        subprocess.run(["pkexec", "sh", "-c", script])
+
+
 
 if __name__ == "__main__":
     CurveApp().run(None)
