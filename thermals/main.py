@@ -72,11 +72,14 @@ class MainWindow(Gtk.ApplicationWindow):
             .bind_property('dark', self.plots, 'darkStyle',
                            GObject.BindingFlags.SYNC_CREATE)
         
-        hbox = Gtk.Box()
-        hbox.append(Gtk.ScrolledWindow(
+        hpane = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        hpane.set_start_child(Gtk.ScrolledWindow(
             child=self.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
-        hbox.append(self.plots)
-        self.set_child(hbox)
+
+        # hpane.append(self.plots)
+        hpane.set_end_child(self.plots)
+        hpane.set_shrink_start_child(False)
+        self.set_child(hpane)
 
         # kickoff sensor update timer
         self.on_timer()

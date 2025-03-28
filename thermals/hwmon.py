@@ -1,5 +1,5 @@
 
-from gi.repository import Gtk, GObject, Gio, GLib
+from gi.repository import Gtk, GObject, Gio, GLib, Pango
 import glob
 from os.path import basename
 import os.path
@@ -90,14 +90,19 @@ class HwmonDevice(Gtk.Expander):
                     sensor = item.get_item()
                     if sensor.has_configuration():
                         box = Gtk.Box()
-                        label = Gtk.Label(label=sensor.get_property(item_property), hexpand=True, xalign=0)
+                        label = Gtk.Label(label=sensor.get_property(item_property),
+                                          hexpand=True,
+                                          xalign=0,
+                                          ellipsize=Pango.EllipsizeMode.END)
                         cfg = Gtk.Button.new_from_icon_name("preferences-system")
                         cfg.connect('clicked', lambda *a: sensor.configure())
                         box.append(label)
                         box.append(cfg)
                         item.set_child(box)
                     else:
-                        item.set_child(Gtk.Label(label=sensor.get_property(item_property), xalign=0))
+                        item.set_child(Gtk.Label(label=sensor.get_property(item_property),
+                                                 xalign=0,
+                                                 ellipsize=Pango.EllipsizeMode.END))
                 elif item_property == "valueStr":
                     label = Gtk.Label(label=item.get_item().get_property(item_property))
                     item.set_child(label)
