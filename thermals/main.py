@@ -79,6 +79,8 @@ class MainWindow(Gtk.ApplicationWindow):
         # hpane.append(self.plots)
         hpane.set_end_child(self.plots)
         hpane.set_shrink_start_child(False)
+        hpane.set_position(420)
+        self.hpane = hpane
         self.set_child(hpane)
 
         # kickoff sensor update timer
