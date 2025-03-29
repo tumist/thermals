@@ -1,8 +1,11 @@
 import sys
+import os
+import re
 from gi.repository import Gio
 from enum import Enum
 from time import monotonic_ns
 from collections.abc import Iterator
+
 
 class Unit(Enum):
     CELCIUS = 0
@@ -68,3 +71,17 @@ def empty(gen: Iterator) -> bool:
         return False
     except StopIteration:
         return True
+
+def reglob(path, root_dir=None):
+    if root_dir is None and path[0] == '/':
+        dir, exp = path.rsplit('/', 1)
+    else:
+        dir = root_dir
+        exp = path
+    regexp = re.compile(exp)
+    for file in os.listdir(dir):
+        if re.match(regexp, file):
+            if root_dir is None:
+                yield os.path.join(dir, file)
+            else:
+                yield file

@@ -5,7 +5,7 @@ from os.path import basename
 import os.path
 from collections.abc import Iterator
 
-from thermals.utils import Unit, readlineStrip, readGio, time_it, empty
+from thermals.utils import Unit, readlineStrip, readGio, time_it, empty, reglob
 from thermals.sensor import Sensor
 from thermals.curve import CurveHwmonWindow
 
@@ -23,7 +23,7 @@ class Hwmon(Gtk.Box):
         self.devices = []
         
         # TODO: Use regexp to catch more than 10 hwmon interfaces
-        for dir in glob.glob("/sys/class/hwmon/hwmon[0-9]"):
+        for dir in reglob("/sys/class/hwmon/hwmon[0-9]+"):
             device = HwmonDevice(dir, config)
             device.app = self.app
             if empty(device.get_sensors()):
@@ -136,22 +136,22 @@ class HwmonDevice(Gtk.Expander):
     def find_sensors(self) -> Iterator[Sensor]:
         """Scans /sys/class/hwmon"""
 
-        for temp in glob.glob("temp[0-9]_input", root_dir=self.dir):
+        for temp in reglob("temp[0-9]+_input$", root_dir=self.dir):
             name = temp.split('_')[0]
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Temperature(self, name, cfg)
         
-        for fan in glob.glob("fan[0-9]_input", root_dir=self.dir):
+        for fan in reglob("fan[0-9]+_input$", root_dir=self.dir):
             name = fan.split('_')[0]
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Fan(self, name, cfg)
         
-        for pwm in glob.glob("pwm[0-9]", root_dir=self.dir):
+        for pwm in reglob("pwm[0-9]+$", root_dir=self.dir):
             name = pwm
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Pwm(self, name, cfg)
         
-        for power in glob.glob("power[0-9]_label", root_dir=self.dir):
+        for power in reglob("power[0-9]+_label$", root_dir=self.dir):
             name = power.split('_')[0]
             cfg = self.config["{}:{}".format(self.id, name)]
             yield Power(self, name, cfg)
