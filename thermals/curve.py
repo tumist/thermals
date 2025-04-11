@@ -11,7 +11,7 @@ from thermals.utils import Unit, readlineStrip
 import subprocess
 
 class Curve(Gtk.DrawingArea):
-    darkStyle = False
+    darkStyle = GObject.Property(type=bool, default=False)
 
     drawDots = True
     drawDotsRadius = 8
@@ -222,45 +222,35 @@ class Curve(Gtk.DrawingArea):
         c.stroke()
 
 
-class CurveApp(Adw.Application):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.win = None
-        self.connect('activate', self.on_activate)
-        if len(sys.argv) == 2:
-            self.windowCls = CurveHwmonWindow
-        else:
-            self.windowCls = CurveWindow
-
-    def on_activate(self, app):
-        if not self.win:
-            self.win = self.windowCls(application=app)
-        self.win.present()
-
-class CurveWindow(Gtk.ApplicationWindow):
-    def __init__(self, application=None):
-        super().__init__(application=application, title="Curve")
-        self.set_default_size(900, 600)
-        self.curve = Curve(data=[(10,10), (30, 20), (50, 60), (80, 230)], y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
-        self.box = Gtk.Box()
-        self.box.append(self.curve)
-        self.set_child(self.box)
-        self.curve.queue_draw()
-
 class CurveHwmonWindow(Gtk.ApplicationWindow):
-    def __init__(self, application=None, path=None):
-        super().__init__(application=application, title="Curve")
+    def __init__(self, application=None, path=None, title=None):
+        super().__init__(application=application, title=title or "Curve")
         self.set_default_size(900, 600)
         self.path = path
+
         data = self.read_data_points()
-        print(data)
+        self._original_data = data.copy()
+
         self.curve = Curve(data=data, y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
-        writeData = Gtk.Button.new_with_label("Write values")
-        writeData.connect('clicked', self.write_data_points)
+        if application:
+            application.get_style_manager()\
+                .bind_property('dark', self.curve, 'darkStyle',
+                            GObject.BindingFlags.SYNC_CREATE)
+
+        applyBtn = Gtk.Button.new_with_label("Apply")
+        applyBtn.connect('clicked', self.write_data_points)
+
+        restoreBtn = Gtk.Button.new_with_label("Restore")
+        restoreBtn.connect('clicked', self.restore_original_data)
 
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.box.append(self.curve)
-        self.box.append(writeData)
+
+        buttonBox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        buttonBox.append(restoreBtn)
+        buttonBox.append(applyBtn)
+
+        self.box.append(buttonBox)
         self.set_child(self.box)
         self.curve.queue_draw()
     
@@ -288,6 +278,38 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
         print(script)
         subprocess.run(["pkexec", "sh", "-c", script])
 
+    def restore_original_data(self, *args):
+        if not self._original_data:
+            return
+        self.curve.data = self._original_data.copy()
+        self.curve.queue_draw()
+
+# For stand-alone runs
+# 
+class CurveApp(Adw.Application):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.win = None
+        self.connect('activate', self.on_activate)
+        if len(sys.argv) == 2:
+            self.windowCls = CurveHwmonWindow
+        else:
+            self.windowCls = CurveWindow
+
+    def on_activate(self, app):
+        if not self.win:
+            self.win = self.windowCls(application=app)
+        self.win.present()
+
+class CurveWindow(Gtk.ApplicationWindow):
+    def __init__(self, application=None):
+        super().__init__(application=application, title="Curve")
+        self.set_default_size(900, 600)
+        self.curve = Curve(data=[(10,10), (30, 20), (50, 60), (80, 230)], y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
+        self.box = Gtk.Box()
+        self.box.append(self.curve)
+        self.set_child(self.box)
+        self.curve.queue_draw()
 
 
 if __name__ == "__main__":

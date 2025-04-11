@@ -93,7 +93,7 @@ class HwmonDevice(Gtk.Expander):
                                           xalign=0,
                                           ellipsize=Pango.EllipsizeMode.END)
                         cfg = Gtk.Button.new_from_icon_name("preferences-system")
-                        cfg.connect('clicked', lambda *a: sensor.configure())
+                        cfg.connect('clicked', lambda *a: sensor.configure(app=self.app))
                         box.append(label)
                         box.append(cfg)
                         item.set_child(box)
@@ -167,7 +167,7 @@ class HwmonDevice(Gtk.Expander):
     
     def on_expanded(self, *a):
         self.config_section['expanded'] = str(self.get_property('expanded'))
-        self.config.write()
+        self.app.config.write()
 
     def get_sensors(self, plot : bool | None = None, unit : int | None = None):
         """Return sensors using filters.
@@ -237,8 +237,11 @@ class Pwm(HwmonSensor):
         full_path = os.path.join(self.device.dir, self.measurement)
         return os.path.exists(full_path + "_auto_point1_pwm")
 
-    def configure(self):
-        win = CurveHwmonWindow(path=os.path.join(self.device.dir, self.measurement))
+    def configure(self, app=None):
+        win = CurveHwmonWindow(
+            application = app,
+            title = "{} {}".format(self.device.name, self.measurement),
+            path=os.path.join(self.device.dir, self.measurement))
         win.present()
 
 
