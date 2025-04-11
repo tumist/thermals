@@ -16,16 +16,14 @@ def convertWatt(inp: str):
     return float(inp) / 1000000.0
 
 class Hwmon(Gtk.Box):
-    def __init__(self, app, config):
+    def __init__(self, app):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.app = app
-        self.config = config
         self.devices = []
         
         # TODO: Use regexp to catch more than 10 hwmon interfaces
         for dir in reglob("/sys/class/hwmon/hwmon[0-9]+"):
-            device = HwmonDevice(dir, config)
-            device.app = self.app
+            device = HwmonDevice(app, dir)
             if empty(device.get_sensors()):
                 print("Found no sensors in {}".format(dir))
                 continue
@@ -49,7 +47,8 @@ class Hwmon(Gtk.Box):
                 dev.grab_focus()
 
 class HwmonDevice(Gtk.Expander):
-    def __init__(self, dir, config):
+    def __init__(self, app, dir):
+        self.app = app
         self.name = basename(dir)
         self.id = basename(dir)
         try:
@@ -59,8 +58,7 @@ class HwmonDevice(Gtk.Expander):
         except FileNotFoundError:
             pass
 
-        self.config = config
-        self.config_section = self.config[self.id]
+        self.config_section = self.app.config[self.id]
         self.config_section.write()
         super().__init__(label=self.name,
                          expanded=self.config_section.getboolean('expanded'),
@@ -120,7 +118,7 @@ class HwmonDevice(Gtk.Expander):
                     item.set_child(box)
                     item.get_item().bind_property("plot", check, "active",
                                                   GObject.BindingFlags.BIDIRECTIONAL)
-                    item.get_item().connect("notify::plot", lambda *args: self.app.plots.recreate_plots())
+                    item.get_item().connect("notify::plot", lambda *args: self.app.win.plots.recreate_plots())
 
             factory.connect('bind', factory_bind)
             column = Gtk.ColumnViewColumn(title=column_title, factory=factory, **kw)
@@ -138,22 +136,22 @@ class HwmonDevice(Gtk.Expander):
 
         for temp in reglob("temp[0-9]+_input$", root_dir=self.dir):
             name = temp.split('_')[0]
-            cfg = self.config["{}:{}".format(self.id, name)]
+            cfg = self.app.config["{}:{}".format(self.id, name)]
             yield Temperature(self, name, cfg)
         
         for fan in reglob("fan[0-9]+_input$", root_dir=self.dir):
             name = fan.split('_')[0]
-            cfg = self.config["{}:{}".format(self.id, name)]
+            cfg = self.app.config["{}:{}".format(self.id, name)]
             yield Fan(self, name, cfg)
         
         for pwm in reglob("pwm[0-9]+$", root_dir=self.dir):
             name = pwm
-            cfg = self.config["{}:{}".format(self.id, name)]
+            cfg = self.app.config["{}:{}".format(self.id, name)]
             yield Pwm(self, name, cfg)
         
         for power in reglob("power[0-9]+_label$", root_dir=self.dir):
             name = power.split('_')[0]
-            cfg = self.config["{}:{}".format(self.id, name)]
+            cfg = self.app.config["{}:{}".format(self.id, name)]
             yield Power(self, name, cfg)
 
     

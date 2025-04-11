@@ -17,16 +17,13 @@ class Plots(Gtk.Box):
     ]
     plotSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     darkStyle = GObject.Property(type=bool, default=False)
-    history = defaultdict(lambda: deque([], 60 * 60 * 3))
 
-    def __init__(self, app, config, hwmon):
+    def __init__(self, app):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.app = app
-        self.config = config
-        self.hwmon = hwmon
         self.canvases = [] # populated with `self.create_plots`
         
-        self.paned = MultiPaned(config['plot_pane'])
+        self.paned = MultiPaned(app.config['plot_pane'])
 
         timeSelector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
         timeSelector.connect("notify::selected", self.on_time_selected)
@@ -42,7 +39,7 @@ class Plots(Gtk.Box):
     
     def clear_plots(self):
         self.remove(self.paned)
-        self.paned = MultiPaned(self.config['plot_pane'])
+        self.paned = MultiPaned(self.app.config['plot_pane'])
         self.prepend(self.paned)
         self.canvases = []
     
@@ -50,10 +47,10 @@ class Plots(Gtk.Box):
         if hasattr(self, 'canvases') and self.canvases:
             print("WARNING: canvases is not empty")
         self.canvases = []
-        plot_sensors = sorted(self.hwmon.get_sensors(plot=True), key=lambda s: s.unit)
+        plot_sensors = sorted(self.app.hwmon.get_sensors(plot=True), key=lambda s: s.unit)
         for unit, sensors in groupby(plot_sensors, key=lambda s: s.unit):
-            canvas = PlotCanvas(Unit(unit), self.hwmon, self.app)
-            canvas.history = self.history
+            canvas = PlotCanvas(Unit(unit), self.app.hwmon, self.app)
+            canvas.history = self.app.history
             canvas.app = self.app
             self.bind_property('plotSeconds', canvas, 'plotSeconds', GObject.BindingFlags.SYNC_CREATE)
             self.bind_property('darkStyle', canvas, 'darkStyle', GObject.BindingFlags.SYNC_CREATE)
@@ -68,14 +65,8 @@ class Plots(Gtk.Box):
     
     @time_it("Plots refresh")
     def refresh(self):
-        self.historize_sensors()
         for canvas in self.canvases:
             canvas.do_draw()
-    
-    @time_it("historize_sensors")
-    def historize_sensors(self):
-        for sensor in self.hwmon.get_sensors():
-            self.history[sensor].append((sensor.time, sensor.value))
 
     def recreate_plots(self):
         self.clear_plots()

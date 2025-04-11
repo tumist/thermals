@@ -10,6 +10,7 @@ import configparser
 
 from thermals.plots import Plots
 from thermals.hwmon import Hwmon
+from thermals.history import History
 from thermals.utils import time_it
 
 HWMON_READ_INTERVAL = 2000
@@ -40,18 +41,13 @@ class MainWindow(Gtk.ApplicationWindow):
         super().__init__(application=application, title="Thermals")
         self.app = application
 
-        self.config = Config()
-        self.config.read()
-        self.config['DEFAULT']['expanded'] = 'True'
-        self.config['DEFAULT']['color'] = "rgb(127, 127, 127)"
-        self.config['DEFAULT']['plot'] = 'True'
         # Makes sure the config is written when MainWindow is closed
-        self.connect('close-request', lambda *args: self.config.write())
+        self.connect('close-request', lambda *args: self.app.config.write())
 
         # Restore window size
         try:
-            width = self.config.getint('window', 'width')
-            height = self.config.getint('window', 'height')
+            width = self.app.config.getint('window', 'width')
+            height = self.app.config.getint('window', 'height')
         except configparser.NoSectionError:
             width = 900
             height = 600
@@ -60,21 +56,20 @@ class MainWindow(Gtk.ApplicationWindow):
         self.connect("notify::default-width", self.on_notify_default_size)
         self.connect("notify::default-height", self.on_notify_default_size)
 
-        self.hwmon = Hwmon(self, self.config)
-        if not self.hwmon.devices:
+        if not self.app.hwmon.devices:
             self.show_hwmon_error_message()
             return
-        self.plots = Plots(self, self.config, self.hwmon)
-
-        self.plots.create_plots()
         
+        self.plots = Plots(self.app)
+        self.plots.create_plots()
+
         self.app.get_style_manager()\
             .bind_property('dark', self.plots, 'darkStyle',
                            GObject.BindingFlags.SYNC_CREATE)
         
         hpane = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         hpane.set_start_child(Gtk.ScrolledWindow(
-            child=self.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
+            child=self.app.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
 
         # hpane.append(self.plots)
         hpane.set_end_child(self.plots)
@@ -82,9 +77,6 @@ class MainWindow(Gtk.ApplicationWindow):
         hpane.set_position(420)
         self.hpane = hpane
         self.set_child(hpane)
-
-        # kickoff sensor update timer
-        self.on_timer()
     
     def show_hwmon_error_message(self):
         cbox = Gtk.CenterBox()
@@ -97,20 +89,39 @@ class MainWindow(Gtk.ApplicationWindow):
         w, h = self.get_default_size()
         self.config['window']['width'] = str(w)
         self.config['window']['height'] = str(h)
-
-    def on_timer(self):
-        GLib.timeout_add(HWMON_READ_INTERVAL, self.on_timer)
-        self.hwmon.refresh()
-        self.plots.refresh()
     
     def select_sensor(self, sensor):
-        self.hwmon.select_sensor(sensor)
+        self.app.hwmon.select_sensor(sensor)
 
-class MyApp(Adw.Application):
+class Thermals(Adw.Application):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.win = None
         self.connect('activate', self.on_activate)
+
+        self.config = Config()
+        self.config.read()
+        self.config['DEFAULT']['expanded'] = 'True'
+        self.config['DEFAULT']['color'] = "rgb(127, 127, 127)"
+        self.config['DEFAULT']['plot'] = 'True'
+
+        # Initialize Hwmon reading
+        self.hwmon = Hwmon(self)
+
+        self.history = History(self)
+
+        # kickoff sensor update timer
+        self.on_timer()
+    
+    def on_timer(self):
+        GLib.timeout_add(HWMON_READ_INTERVAL, self.on_timer)
+        self.hwmon.refresh()
+        self.history.historize_sensors()
+        if self.win:
+            self.win.plots.refresh()
+
+    def select_sensor(self, sensor):
+        self.win.select_sensor(sensor)
 
     def on_activate(self, app):
         if not self.win:
@@ -118,6 +129,6 @@ class MyApp(Adw.Application):
         self.win.present()
 
 def main():
-    app = MyApp(application_id="is.tum.Thermals")
+    app = Thermals(application_id="is.tum.Thermals")
     exit_status = app.run(None)
     sys.exit(exit_status)
