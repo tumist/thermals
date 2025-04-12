@@ -235,13 +235,15 @@ class Pwm(HwmonSensor):
 
     def has_configuration(self):
         full_path = os.path.join(self.device.dir, self.measurement)
-        return os.path.exists(full_path + "_auto_point1_pwm")
+        path_enable = full_path + "_enable"
+        return os.path.exists(full_path + "_auto_point1_pwm") and \
+               os.path.exists(path_enable) and \
+               readGio(path_enable)() == "5"
 
     def configure(self, app=None):
-        win = CurveHwmonWindow(
+        win = CurveHwmonWindow(self,
             application = app,
-            title = "{} {}".format(self.device.name, self.measurement),
-            path=os.path.join(self.device.dir, self.measurement))
+            title = "{} {}".format(self.device.name, self.measurement))
         win.present()
 
 

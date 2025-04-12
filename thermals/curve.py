@@ -1,13 +1,15 @@
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GObject, GLib
+from gi.repository import Gtk, Adw, GObject, GLib, Gio
 
 from cairo import Matrix
 from math import dist
 import sys
+import os
 from itertools import takewhile, dropwhile, count
 from thermals.utils import Unit, readlineStrip
+from thermals.sensor import Sensor
 import subprocess
 
 class Curve(Gtk.DrawingArea):
@@ -68,16 +70,22 @@ class Curve(Gtk.DrawingArea):
     
     def on_motion(self, _, w, h):
         hovering = self.point_at(w, h, self.drawDotsRadius)
+        
+        # Remove current handles if not hovering over a point
         if hovering is None:
+            self.set_tooltip_text(None)
             if self.drawHandlesCurrent is None:
                 return
             else:
                 self.drawHandlesCurrent = None
                 self.queue_draw()
                 return
+            
+        # Draw handles when hovering over a point
         _, hovering = hovering
         if hovering != self.drawHandlesCurrent:
             self.drawHandlesCurrent = hovering
+            self.set_tooltip_text("{}{} {}{}".format(hovering[0], self.x_unit, hovering[1], self.y_unit))
             self.queue_draw()
 
     def drag_begin(self, _, w, h):
@@ -125,7 +133,7 @@ class Curve(Gtk.DrawingArea):
         except IndexError:
             pass
 
-        self.data[index] = (self.wx(new_w), self.hy(new_h))
+        self.data[index] = (int(round(self.wx(new_w))), int(round(self.hy(new_h))))
 
     # def point_at_xy(self, x, y, r):
     #     return self.point_at(self.xw(x), self.yh(y), r)
@@ -223,13 +231,17 @@ class Curve(Gtk.DrawingArea):
 
 
 class CurveHwmonWindow(Gtk.ApplicationWindow):
-    def __init__(self, application=None, path=None, title=None):
+    def __init__(self, sensor, application=None, path=None, title=None):
         super().__init__(application=application, title=title or "Curve")
         self.set_default_size(900, 600)
-        self.path = path
+        self.path = os.path.join(sensor.device.dir, sensor.measurement)
+        self.sensor = sensor
 
         data = self.read_data_points()
         self._original_data = data.copy()
+        # While Curve stores `data`, this stores tempSelected index
+        self.tempSelected = self.read_temp_selected()
+        self._original_temp_selected = None
 
         self.curve = Curve(data=data, y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
         if application:
@@ -243,14 +255,34 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
         restoreBtn = Gtk.Button.new_with_label("Restore")
         restoreBtn.connect('clicked', self.restore_original_data)
 
+        tempModel = Gio.ListStore(item_type=Sensor)
+        tempFactory = Gtk.SignalListItemFactory()
+        tempFactory.connect("setup", lambda _, list_item: list_item.set_child(Gtk.Label()))
+        tempFactory.connect("bind", lambda _, list_item: list_item.get_child().set_text(list_item.get_item().name))
+        tempSelect = Gtk.DropDown(model=tempModel, factory=tempFactory)
+        self.tempSelect = tempSelect
+        tempSelect.set_sensitive(False)
+        for index, sensor in enumerate(sensor.device.get_sensors()):
+            if sensor.measurement.startswith("temp"):
+                tempModel.append(sensor)
+                if sensor.measurement == "temp{}".format(self.tempSelected):
+                    print("Found current temp_sel index {}: {}".format(index, sensor))
+                    self._original_temp_selected = index
+                    tempSelect.set_sensitive(True)
+                    tempSelect.set_selected(index)
+        tempSelect.connect("notify::selected-item", self.on_select_temp)
+
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+                        #  margin_bottom=10, margin_top=10, margin_start=10, margin_end=10)
         self.box.append(self.curve)
 
-        buttonBox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        buttonBox.append(restoreBtn)
-        buttonBox.append(applyBtn)
+        bottomBox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        bottomBox.append(Gtk.Label(label="Monitor temperature:"))
+        bottomBox.append(tempSelect)
+        bottomBox.append(restoreBtn)
+        bottomBox.append(applyBtn)
 
-        self.box.append(buttonBox)
+        self.box.append(bottomBox)
         self.set_child(self.box)
         self.curve.queue_draw()
     
@@ -274,15 +306,32 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
             commands.append(temp)
             print(pwm)
             commands.append(pwm)
+        if self.tempSelected != None:
+            commands.append("echo {} > {}_temp_sel".format(self.tempSelected, path))
         script = " && ".join(commands)
         print(script)
-        subprocess.run(["pkexec", "sh", "-c", script])
+        print(subprocess.run(["pkexec", "sh", "-c", script]))
+    
+    def read_temp_selected(self):
+        try:
+            return int(readlineStrip(self.path + "_temp_sel"))
+        except:
+            return None
 
     def restore_original_data(self, *args):
         if not self._original_data:
             return
         self.curve.data = self._original_data.copy()
         self.curve.queue_draw()
+        if self._original_temp_selected:
+            self.tempSelect.set_selected(self._original_temp_selected)
+    
+    def on_select_temp(self, dropdown, _):
+        item = dropdown.get_selected_item()
+        print("tempSel dropdown selected {}".format(dropdown.get_selected_item().measurement))
+        index = int(item.measurement[4:])
+        self.tempSelected = index
+
 
 # For stand-alone runs
 # 

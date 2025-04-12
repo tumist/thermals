@@ -87,8 +87,8 @@ class MainWindow(Gtk.ApplicationWindow):
     
     def on_notify_default_size(self, *args):
         w, h = self.get_default_size()
-        self.config['window']['width'] = str(w)
-        self.config['window']['height'] = str(h)
+        self.app.config['window']['width'] = str(w)
+        self.app.config['window']['height'] = str(h)
     
     def select_sensor(self, sensor):
         self.app.hwmon.select_sensor(sensor)
