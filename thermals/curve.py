@@ -237,40 +237,26 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
         self.path = os.path.join(sensor.device.dir, sensor.measurement)
         self.sensor = sensor
 
-        data = self.read_data_points()
-        self._original_data = data.copy()
-        # While Curve stores `data`, this stores tempSelected index
-        self.tempSelected = self.read_temp_selected()
-        self._original_temp_selected = None
-
-        self.curve = Curve(data=data, y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
+        self.curve = Curve(y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
         if application:
             application.get_style_manager()\
                 .bind_property('dark', self.curve, 'darkStyle',
                             GObject.BindingFlags.SYNC_CREATE)
-
-        applyBtn = Gtk.Button.new_with_label("Apply")
-        applyBtn.connect('clicked', self.write_data_points)
-
-        restoreBtn = Gtk.Button.new_with_label("Restore")
-        restoreBtn.connect('clicked', self.restore_original_data)
-
-        tempModel = Gio.ListStore(item_type=Sensor)
+        
+        self.tempModel = Gio.ListStore(item_type=Sensor)
         tempFactory = Gtk.SignalListItemFactory()
         tempFactory.connect("setup", lambda _, list_item: list_item.set_child(Gtk.Label()))
         tempFactory.connect("bind", lambda _, list_item: list_item.get_child().set_text(list_item.get_item().name))
-        tempSelect = Gtk.DropDown(model=tempModel, factory=tempFactory)
-        self.tempSelect = tempSelect
-        tempSelect.set_sensitive(False)
-        for index, sensor in enumerate(sensor.device.get_sensors()):
-            if sensor.measurement.startswith("temp"):
-                tempModel.append(sensor)
-                if sensor.measurement == "temp{}".format(self.tempSelected):
-                    print("Found current temp_sel index {}: {}".format(index, sensor))
-                    self._original_temp_selected = index
-                    tempSelect.set_sensitive(True)
-                    tempSelect.set_selected(index)
-        tempSelect.connect("notify::selected-item", self.on_select_temp)
+        self.tempSelect = Gtk.DropDown(model=self.tempModel, factory=tempFactory)
+        self.tempSelect.set_sensitive(False)
+
+        applyBtn = Gtk.Button.new_with_label("Apply")
+        applyBtn.set_halign(Gtk.Align.END)
+        applyBtn.connect('clicked', self.on_apply)
+
+        restoreBtn = Gtk.Button.new_with_label("Restore")
+        restoreBtn.set_halign(Gtk.Align.END)
+        restoreBtn.connect('clicked', self.restore_original_data)
 
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
                         #  margin_bottom=10, margin_top=10, margin_start=10, margin_end=10)
@@ -278,13 +264,21 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
 
         bottomBox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         bottomBox.append(Gtk.Label(label="Monitor temperature:"))
-        bottomBox.append(tempSelect)
+        bottomBox.append(self.tempSelect)
+        restoreBtn.set_hexpand(True)
         bottomBox.append(restoreBtn)
         bottomBox.append(applyBtn)
 
         self.box.append(bottomBox)
         self.set_child(self.box)
         self.curve.queue_draw()
+
+        ##
+        self.restore_hwmon()
+
+        self._original_data = self.curve.data.copy()
+        self._original_temp_selected_index = self.tempSelectedIndex
+        self.tempSelect.connect("notify::selected-item", self.on_select_temp)
     
     def read_data_points(self):
         path = self.path or sys.argv[1]
@@ -294,8 +288,14 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
             pwm = readlineStrip("{}_auto_point{}_pwm".format(path, i))
             data.append((int(temp) // 1000, int(pwm)))
         return data
-    
-    def write_data_points(self, *args, **kw):
+
+    def read_temp_selected(self):
+        try:
+            return int(readlineStrip(self.path + "_temp_sel"))
+        except:
+            return None
+
+    def write_hwmon(self, *args, **kw):
         path = self.path or sys.argv[1]
         data = self.curve.data
         commands = []
@@ -309,28 +309,40 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
         if self.tempSelected != None:
             commands.append("echo {} > {}_temp_sel".format(self.tempSelected, path))
         script = " && ".join(commands)
-        print(script)
         print(subprocess.run(["pkexec", "sh", "-c", script]))
     
-    def read_temp_selected(self):
-        try:
-            return int(readlineStrip(self.path + "_temp_sel"))
-        except:
-            return None
+    def restore_hwmon(self):
+        """Read from hwmon and update GUI"""
+        data = self.read_data_points()
+        self.curve.data = data
+        self.tempSelected = self.read_temp_selected()
+
+        for index, sensor in enumerate(self.sensor.device.get_sensors()):
+            if sensor.measurement.startswith("temp"):
+                self.tempModel.append(sensor)
+                if sensor.measurement == "temp{}".format(self.tempSelected):
+                    print("Found current temp_sel index {}: {}".format(index, sensor))
+                    self.tempSelectedIndex = index
+                    self.tempSelect.set_sensitive(True)
+                    self.tempSelect.set_selected(index)
 
     def restore_original_data(self, *args):
         if not self._original_data:
             return
         self.curve.data = self._original_data.copy()
         self.curve.queue_draw()
-        if self._original_temp_selected:
-            self.tempSelect.set_selected(self._original_temp_selected)
+        if self._original_temp_selected_index:
+            self.tempSelect.set_selected(self._original_temp_selected_index)
     
     def on_select_temp(self, dropdown, _):
         item = dropdown.get_selected_item()
         print("tempSel dropdown selected {}".format(dropdown.get_selected_item().measurement))
-        index = int(item.measurement[4:])
-        self.tempSelected = index
+        hwmon_index = int(item.measurement[4:])
+        self.tempSelected = hwmon_index
+    
+    def on_apply(self, _):
+        self.write_hwmon()
+        self.restore_hwmon()
 
 
 # For stand-alone runs
