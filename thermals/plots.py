@@ -235,11 +235,13 @@ class PlotCanvas(Gtk.Box):
         c.set_line_width(2)
         lines_drawn = 0
         for sensor in self.sensors():
-            #hiter = dropwhile(lambda h: h[0] < t_min, self.history[sensor])
             hiter = takewhile(lambda h: h[0] > t_min, reversed(self.history[sensor]))
             
             c.set_source_rgb(*sensor.RGB_triple())
-            t0, v0 = next(hiter)
+            try:
+                t0, v0 = next(hiter)
+            except StopIteration:
+                continue
 
             if v0 < self._value_min:
                 self._value_min = v0

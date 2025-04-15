@@ -5,7 +5,7 @@ from os.path import basename
 import os.path
 from collections.abc import Iterator
 
-from thermals.utils import Unit, readlineStrip, readGio, time_it, empty, reglob
+from thermals.utils import Unit, readlineStrip, readGio, time_it, empty, reglob, monotonic_s
 from thermals.sensor import Sensor
 from thermals.curve import CurveHwmonWindow
 
@@ -34,7 +34,7 @@ class Hwmon(Gtk.Box):
     @time_it("Hwmon refresh")
     def refresh(self):
         for sensor in self.get_sensors():
-            sensor.refresh()
+            time_it("{} refresh".format(sensor))(sensor.refresh)()
 
     def get_sensors(self, **kw):
         for dev in self.devices:
@@ -154,6 +154,11 @@ class HwmonDevice(Gtk.Expander):
             cfg = self.app.config["{}:{}".format(self.id, name)]
             yield Power(self, name, cfg)
 
+        for energy in reglob("energy[0-9]+_label$", root_dir=self.dir):
+            name = energy.split('_')[0]
+            cfg = self.app.config["{}:{}".format(self.id, name)]
+            yield Energy(self, name, cfg)
+
     
     def select_sensor(self, sensor: Sensor):
         for (i, s) in enumerate(self.store):
@@ -259,3 +264,35 @@ class Power(HwmonSensor):
             return readGio(os.path.join(self.device.dir, self.measurement + "_input"), func = convertWatt)()
     def format(self):
         return "{}{}".format(self.value, Unit(self.unit))
+
+class Energy(HwmonSensor):
+    # Energy reads energy counters in Joules.
+    # `get_value` converts it to Watts and therefor needs the previous value.
+    unit = Unit.WATT.value
+    previous_joules = None
+    # time = None # set when `refresh`ed
+
+    def get_value(self):
+        current_joules = readGio(
+            os.path.join(self.device.dir, self.measurement + "_input"),
+            func = convertWatt)()
+
+        if not self.previous_joules or not self.time:
+            self.previous_joules = current_joules
+            return
+        
+        dt = monotonic_s() - self.time
+        if dt <= 0:
+            return
+        difference = current_joules - self.previous_joules
+        if difference < 0:
+            # Counter has wrapped around, and we don't have a value.
+            # Maybe someone can fix this.
+            return
+        self.previous_joules = current_joules
+        return difference / dt
+
+    def format(self):
+        if self.value is None:
+            return ""
+        return "{:.1f}{}".format(self.value, Unit(self.unit))

@@ -10,4 +10,6 @@ class History(defaultdict):
     @time_it("historize_sensors")
     def historize_sensors(self):
         for sensor in self.app.hwmon.get_sensors():
+            if sensor.value is None:
+                continue
             self[sensor].append((sensor.time, sensor.value))
