@@ -107,6 +107,7 @@ class Thermals(Adw.Application):
 
         # Initialize Hwmon reading
         self.hwmon = Hwmon(self)
+        self.hwmon.find_devices()
 
         self.history = History(self)
 

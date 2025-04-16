@@ -20,10 +20,10 @@ class Hwmon(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.app = app
         self.devices = []
-        
-        # TODO: Use regexp to catch more than 10 hwmon interfaces
+
+    def find_devices(self):
         for dir in reglob("/sys/class/hwmon/hwmon[0-9]+"):
-            device = HwmonDevice(app, dir)
+            device = HwmonDevice(self.app, dir)
             if empty(device.get_sensors()):
                 print("Found no sensors in {}".format(dir))
                 continue
@@ -49,21 +49,25 @@ class Hwmon(Gtk.Box):
 class HwmonDevice(Gtk.Expander):
     def __init__(self, app, dir):
         self.app = app
-        self.name = basename(dir)
-        self.id = basename(dir)
-        try:
-            hwmon_name = readlineStrip(dir + "/name")
-            self.name += " [" + hwmon_name + "]"
-            self.id += ":" + hwmon_name
-        except FileNotFoundError:
-            pass
+        self.dir = dir
+        # The `id` only becomes the device identifier for now.
+        # It may be needed to have this a device path or something like that,
+        # also a device might have multiple hwmon instances. TODO
+        self.id = os.path.basename(os.readlink(dir + "/device"))
+        self.name = readlineStrip(dir + "/name")
 
         self.config_section = self.app.config[self.id]
         self.config_section.write()
-        super().__init__(label=self.name,
-                         expanded=self.config_section.getboolean('expanded'),
+        super().__init__(expanded=self.config_section.getboolean('expanded'),
                          halign=Gtk.Align.BASELINE)
-        self.dir = dir
+        
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        label_name = Gtk.Label(label=self.name, hexpand=True, halign=Gtk.Align.START)
+        label_id = Gtk.Label(label="<small>{}</small>".format(self.id), halign=Gtk.Align.END)
+        label_id.set_use_markup(True)
+        box.append(label_name)
+        box.append(label_id)
+        self.set_label_widget(box)
 
         self.connect('notify::expanded', self.on_expanded)
 
