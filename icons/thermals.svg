@@ -39,7 +39,4 @@
   <use href="#blade" transform="rotate(240, 64, 64)"/>
   <use href="#blade" transform="rotate(300, 64, 64)"/>
   <circle cx="64" cy="64" r="16" fill="#755139"/>
-  <animateTransform attributeName="transform" attributeType="XML"
-                    type="rotate" from="0 64 64" to="-360 64 64"
-                    dur="1s" repeatCount="indefinite" />
 </svg>
