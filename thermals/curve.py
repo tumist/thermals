@@ -343,35 +343,3 @@ class CurveHwmonWindow(Gtk.ApplicationWindow):
     def on_apply(self, _):
         self.write_hwmon()
         self.restore_hwmon()
-
-
-# For stand-alone runs
-# 
-class CurveApp(Adw.Application):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.win = None
-        self.connect('activate', self.on_activate)
-        if len(sys.argv) == 2:
-            self.windowCls = CurveHwmonWindow
-        else:
-            self.windowCls = CurveWindow
-
-    def on_activate(self, app):
-        if not self.win:
-            self.win = self.windowCls(application=app)
-        self.win.present()
-
-class CurveWindow(Gtk.ApplicationWindow):
-    def __init__(self, application=None):
-        super().__init__(application=application, title="Curve")
-        self.set_default_size(900, 600)
-        self.curve = Curve(data=[(10,10), (30, 20), (50, 60), (80, 230)], y_unit=Unit.PWM, x_unit=Unit.CELCIUS)
-        self.box = Gtk.Box()
-        self.box.append(self.curve)
-        self.set_child(self.box)
-        self.curve.queue_draw()
-
-
-if __name__ == "__main__":
-    CurveApp().run(None)
