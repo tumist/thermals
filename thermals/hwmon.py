@@ -55,6 +55,7 @@ class HwmonDevice(Gtk.Expander):
         # also a device might have multiple hwmon instances. TODO
         self.id = os.path.basename(os.readlink(dir + "/device"))
         self.name = readlineStrip(dir + "/name")
+        self.hwmonInstance = os.path.basename(dir)
 
         self.config_section = self.app.config[self.id]
         self.config_section.write()
@@ -63,7 +64,7 @@ class HwmonDevice(Gtk.Expander):
         
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         label_name = Gtk.Label(label=self.name, hexpand=True, halign=Gtk.Align.START)
-        label_id = Gtk.Label(label="<small>{}</small>".format(self.id), halign=Gtk.Align.END)
+        label_id = Gtk.Label(label="<small>{}</small>".format(self.hwmonInstance), halign=Gtk.Align.END)
         label_id.set_use_markup(True)
         box.append(label_name)
         box.append(label_id)
