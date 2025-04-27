@@ -13,7 +13,7 @@ from thermals.hwmon import Hwmon
 from thermals.history import History
 from thermals.utils import time_it
 
-HWMON_READ_INTERVAL = 2000
+HWMON_READ_INTERVAL = 1000
 
 class Config(configparser.ConfigParser):
     def __init__(self, *args, **kw):
@@ -89,6 +89,7 @@ class MainWindow(Gtk.ApplicationWindow):
         w, h = self.get_default_size()
         self.app.config['window']['width'] = str(w)
         self.app.config['window']['height'] = str(h)
+        self.plots.on_notify_default_size(*args)
     
     def select_sensor(self, sensor):
         self.app.hwmon.select_sensor(sensor)

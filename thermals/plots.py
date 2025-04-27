@@ -14,6 +14,7 @@ class Plots(Gtk.Box):
         ("30 mins", 60 * 30),
         ("1 hour", 60 * 60),
         ("3 hours", 60 * 60 * 3),
+        ("10 hours", 60 * 60 * 10)
     ]
     plotSeconds = GObject.Property(type=int, default=timeSelections[0][1])
     darkStyle = GObject.Property(type=bool, default=False)
@@ -28,14 +29,32 @@ class Plots(Gtk.Box):
         timeSelector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
         timeSelector.connect("notify::selected", self.on_time_selected)
 
+        resolutionSelector = Gtk.DropDown.new_from_strings(["{} sec".format(s) for s in app.history.resolutions])
+        resolutionSelector.connect("notify::selected", self.on_resolution_selected)
+
+        self.pxPerMeasure = Gtk.Label(label="")
+
         clearMinMax = Gtk.Button.new_with_label("Clear Min/Max")
         clearMinMax.connect('clicked', self.on_clear_min_max)
 
         self.append(self.paned)
-        bottomBox = Gtk.Box(homogeneous=True)
+        bottomBox = Gtk.Box(spacing=10)
+        bottomBox.append(Gtk.Label(label="History:"))
         bottomBox.append(timeSelector)
+        bottomBox.append(Gtk.Label(label="Resolution:"))
+        bottomBox.append(resolutionSelector)
+        bottomBox.append(self.pxPerMeasure)
         bottomBox.append(clearMinMax)
         self.append(bottomBox)
+    
+    def updatePxPerMeasure(self):
+        if not self.canvases:
+            return
+        msPPx = self.get_width() / (self.plotSeconds / self.canvases[0].history_resolution)
+        self.pxPerMeasure.set_label("{} pixels/measurement".format(round(msPPx, 1)))
+    
+    def on_notify_default_size(self, *args):
+        self.updatePxPerMeasure()
     
     def clear_plots(self):
         self.remove(self.paned)
@@ -62,6 +81,14 @@ class Plots(Gtk.Box):
         self.plotSeconds = self.timeSelections[selected][1]
         for canvas in self.canvases:
             canvas.do_draw()
+        self.updatePxPerMeasure()
+    
+    def on_resolution_selected(self, dropdown, _):
+        selected = dropdown.get_property("selected")
+        for canvas in self.canvases:
+            canvas.history_resolution = self.app.history.resolutions[selected]
+            canvas.do_draw()
+        self.updatePxPerMeasure()
     
     @time_it("Plots refresh")
     def refresh(self):
@@ -121,12 +148,13 @@ class MultiPaned(Gtk.Paned):
 # history helpers
 def values(seq):
     for dq in seq:
-        for (t,v) in dq:
-            yield v
+        for b in dq:
+            yield b.value
 
 class PlotCanvas(Gtk.Box):
     darkStyle = GObject.Property(type=bool, default=False)
     plotSeconds = GObject.Property(type=int)
+    history_resolution = 1
     
     #_pointer = (None, None, None)
 
@@ -181,6 +209,16 @@ class PlotCanvas(Gtk.Box):
     
     def sensors(self) -> list[Sensor]:
         return list(self.hwmon.get_sensors(plot=True, unit=self.unit.value))
+    
+    # def history_resolution(self):
+    #     for res in self.history.resolutions:
+    #         print("res {}: {} ms/px".format(res, self.plotSeconds / res / self.canvas.get_width()))
+    #         if self.plotSeconds / res / self.canvas.get_width() > 0.5:
+    #             continue
+    #         return res
+    
+    def data(self, sensor):
+        return self.history.sensors[sensor][self.history_resolution]
 
     def draw(self, area, c, w, h, data):
         if self.darkStyle:
@@ -235,11 +273,13 @@ class PlotCanvas(Gtk.Box):
         c.set_line_width(2)
         lines_drawn = 0
         for sensor in self.sensors():
-            hiter = takewhile(lambda h: h[0] > t_min, reversed(self.history[sensor]))
+            hiter = takewhile(lambda h: h.time > t_min, reversed(self.data(sensor)))
             
             c.set_source_rgb(*sensor.RGB_triple())
             try:
-                t0, v0 = next(hiter)
+                b = next(hiter)
+                v0 = b.value
+                t0 = b.time
             except StopIteration:
                 continue
 
@@ -249,7 +289,9 @@ class PlotCanvas(Gtk.Box):
                 self._value_max = v0
         
             c.move_to(translate_x(t0), translate_y(v0))
-            for (t, v) in hiter:
+            for b in hiter:
+                t = b.time
+                v = b.value
                 c.line_to(translate_x(t), translate_y(v))
                 lines_drawn += 1
             c.stroke()
@@ -266,10 +308,10 @@ class PlotCanvas(Gtk.Box):
             self._value_min = 0
         else:
             self._value_min = min(values(
-                [takewhile(lambda h: h[0] >= t_min, reversed(self.history[s])) for s in sensors]
+                [takewhile(lambda h: h.time >= t_min, reversed(self.data(s))) for s in sensors]
                 ))
         self._value_max = max(values(
-            [takewhile(lambda h: h[0] >= t_min, reversed(self.history[s])) for s in sensors]
+            [takewhile(lambda h: h.time >= t_min, reversed(self.data(s))) for s in sensors]
             ))
         if self._value_min >= self._value_max:
             # Add some space when there is no/one value
@@ -289,9 +331,11 @@ class PlotCanvas(Gtk.Box):
 
         line_distances = []
         for sensor in self.sensors():
-            hiter = dropwhile(lambda h: h[0] < t, self.history[sensor])
+            hiter = dropwhile(lambda h: h.time < t, self.data(sensor))
             try:
-                (st, sv) = next(hiter)
+                b = next(hiter)
+                st = b.time
+                sv = b.value
                 if abs(st-t) > 10:
                     continue
                 line_distances.append((abs(v-sv), sensor, st, sv))

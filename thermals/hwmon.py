@@ -64,7 +64,7 @@ class HwmonDevice(Gtk.Expander):
         
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         label_name = Gtk.Label(label=self.name, hexpand=True, halign=Gtk.Align.START)
-        label_id = Gtk.Label(label="<small>{}</small>".format(self.hwmonInstance), halign=Gtk.Align.END)
+        label_id = Gtk.Label(label="<small>{}</small>".format(self.hwmonInstance), halign=Gtk.Align.END, margin_end=10)
         label_id.set_use_markup(True)
         box.append(label_name)
         box.append(label_id)
