@@ -1,5 +1,4 @@
-from collections import deque, defaultdict
-from itertools import islice, takewhile, dropwhile, count, batched, groupby
+from itertools import takewhile, dropwhile, count, groupby
 
 from gi.repository import Gtk, GObject
 
@@ -29,11 +28,6 @@ class Plots(Gtk.Box):
         timeSelector = Gtk.DropDown.new_from_strings([s for (s, _) in self.timeSelections])
         timeSelector.connect("notify::selected", self.on_time_selected)
 
-        resolutionSelector = Gtk.DropDown.new_from_strings(["{} sec".format(s) for s in app.history.resolutions])
-        resolutionSelector.connect("notify::selected", self.on_resolution_selected)
-
-        self.pxPerMeasure = Gtk.Label(label="")
-
         clearMinMax = Gtk.Button.new_with_label("Clear Min/Max")
         clearMinMax.connect('clicked', self.on_clear_min_max)
 
@@ -41,20 +35,18 @@ class Plots(Gtk.Box):
         bottomBox = Gtk.Box(spacing=10)
         bottomBox.append(Gtk.Label(label="History:"))
         bottomBox.append(timeSelector)
-        bottomBox.append(Gtk.Label(label="Resolution:"))
-        bottomBox.append(resolutionSelector)
-        bottomBox.append(self.pxPerMeasure)
         bottomBox.append(clearMinMax)
         self.append(bottomBox)
     
-    def updatePxPerMeasure(self):
+    def pxPerMeasurement(self):
         if not self.canvases:
             return
-        msPPx = self.get_width() / (self.plotSeconds / self.canvases[0].history_resolution)
-        self.pxPerMeasure.set_label("{} pixels/measurement".format(round(msPPx, 1)))
+        pxPerMs = self.get_width() / (self.plotSeconds / self.canvases[0].history_resolution)
+        print("{} pixels/measurement".format(round(pxPerMs, 1)))
+        return pxPerMs
     
     def on_notify_default_size(self, *args):
-        self.updatePxPerMeasure()
+        self.pxPerMeasurement()
     
     def clear_plots(self):
         self.remove(self.paned)
@@ -67,7 +59,7 @@ class Plots(Gtk.Box):
             print("WARNING: canvases is not empty")
         self.canvases = []
         plot_sensors = sorted(self.app.hwmon.get_sensors(plot=True), key=lambda s: s.unit)
-        for unit, sensors in groupby(plot_sensors, key=lambda s: s.unit):
+        for unit, _ in groupby(plot_sensors, key=lambda s: s.unit):
             canvas = PlotCanvas(Unit(unit), self.app.hwmon, self.app)
             canvas.history = self.app.history
             canvas.app = self.app
@@ -80,15 +72,9 @@ class Plots(Gtk.Box):
         selected = dropdown.get_property("selected")
         self.plotSeconds = self.timeSelections[selected][1]
         for canvas in self.canvases:
+            canvas.clear_min_max()
             canvas.do_draw()
-        self.updatePxPerMeasure()
-    
-    def on_resolution_selected(self, dropdown, _):
-        selected = dropdown.get_property("selected")
-        for canvas in self.canvases:
-            canvas.history_resolution = self.app.history.resolutions[selected]
-            canvas.do_draw()
-        self.updatePxPerMeasure()
+        self._history_resolution = None # Will recalculate
     
     @time_it("Plots refresh")
     def refresh(self):
@@ -154,7 +140,7 @@ def values(seq):
 class PlotCanvas(Gtk.Box):
     darkStyle = GObject.Property(type=bool, default=False)
     plotSeconds = GObject.Property(type=int)
-    history_resolution = 1
+    _history_resolution = 1
     
     #_pointer = (None, None, None)
 
@@ -205,18 +191,27 @@ class PlotCanvas(Gtk.Box):
                 self._value_max, str(self.unit)))
     
     def do_draw(self):
+        self._history_resolution = None
         self.canvas.queue_draw()
     
     def sensors(self) -> list[Sensor]:
         return list(self.hwmon.get_sensors(plot=True, unit=self.unit.value))
     
-    # def history_resolution(self):
-    #     for res in self.history.resolutions:
-    #         print("res {}: {} ms/px".format(res, self.plotSeconds / res / self.canvas.get_width()))
-    #         if self.plotSeconds / res / self.canvas.get_width() > 0.5:
-    #             continue
-    #         return res
-    
+    @property
+    def history_resolution(self):
+        if self._history_resolution is not None:
+            return self._history_resolution
+        else:
+            for res in self.history.resolutions:
+                pxPerMs = self.get_width() / (self.plotSeconds / res)
+                if pxPerMs < 1.5:
+                    continue
+                #print("History resolution selected: {} {}px/ms".format(res, pxPerMs))
+                self._history_resolution = res
+                return res
+            self._history_resolution = self.history.resolutions[-1]
+            return self._history_resolution
+            
     def data(self, sensor):
         return self.history.sensors[sensor][self.history_resolution]
 

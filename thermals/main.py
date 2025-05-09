@@ -70,6 +70,7 @@ class MainWindow(Gtk.ApplicationWindow):
         hpane = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         hpane.set_start_child(Gtk.ScrolledWindow(
             child=self.app.hwmon, hscrollbar_policy=Gtk.PolicyType.NEVER))
+        hpane.set_resize_start_child(False)
 
         # hpane.append(self.plots)
         hpane.set_end_child(self.plots)
