@@ -37,16 +37,10 @@ class Plots(Gtk.Box):
         bottomBox.append(timeSelector)
         bottomBox.append(clearMinMax)
         self.append(bottomBox)
-    
-    def pxPerMeasurement(self):
-        if not self.canvases:
-            return
-        pxPerMs = self.get_width() / (self.plotSeconds / self.canvases[0].history_resolution)
-        print("{} pixels/measurement".format(round(pxPerMs, 1)))
-        return pxPerMs
-    
+
     def on_notify_default_size(self, *args):
-        self.pxPerMeasurement()
+        for canvas in self.canvases:
+            canvas._history_resolution = None
     
     def clear_plots(self):
         self.remove(self.paned)
@@ -73,8 +67,8 @@ class Plots(Gtk.Box):
         self.plotSeconds = self.timeSelections[selected][1]
         for canvas in self.canvases:
             canvas.clear_min_max()
+            canvas._history_resolution = None # Will recalculate
             canvas.do_draw()
-        self._history_resolution = None # Will recalculate
     
     @time_it("Plots refresh")
     def refresh(self):
@@ -142,8 +136,6 @@ class PlotCanvas(Gtk.Box):
     plotSeconds = GObject.Property(type=int)
     _history_resolution = 1
     
-    #_pointer = (None, None, None)
-
     # These are the mins and max of values in this plot, updated by
     # `draw` or `scan_min_max`.
     # However, although the values are historized on every timer and
@@ -191,7 +183,7 @@ class PlotCanvas(Gtk.Box):
                 self._value_max, str(self.unit)))
     
     def do_draw(self):
-        self._history_resolution = None
+        #self._history_resolution = None
         self.canvas.queue_draw()
     
     def sensors(self) -> list[Sensor]:
@@ -206,7 +198,7 @@ class PlotCanvas(Gtk.Box):
                 pxPerMs = self.get_width() / (self.plotSeconds / res)
                 if pxPerMs < 1.5:
                     continue
-                #print("History resolution selected: {} {}px/ms".format(res, pxPerMs))
+                print("History resolution selected: {} {}px/ms".format(res, pxPerMs))
                 self._history_resolution = res
                 return res
             self._history_resolution = self.history.resolutions[-1]
@@ -314,7 +306,7 @@ class PlotCanvas(Gtk.Box):
             self._value_max = self._value_min + 1
     
     @time_it("Coord to Sensor value")
-    def get_info_at_coord(self, x, y):
+    def get_info_at_coord(self, x, y, radius=25, multiple=False):
         h = self.canvas.get_height()
         w = self.canvas.get_width()
 
@@ -324,6 +316,9 @@ class PlotCanvas(Gtk.Box):
         v = v_max - ((y/h) * (v_max - v_min))
         t = self._time_min + ((x/w) * (self._time_max - self._time_min))
 
+        radius_t = self._time_min + ((radius/w) * (self._time_max - self._time_min))
+        radius_v = ((radius/h) * (v_max - v_min))
+
         line_distances = []
         for sensor in self.sensors():
             hiter = dropwhile(lambda h: h.time < t, self.data(sensor))
@@ -331,21 +326,25 @@ class PlotCanvas(Gtk.Box):
                 b = next(hiter)
                 st = b.time
                 sv = b.value
-                if abs(st-t) > 10:
+                if abs(st-t) > radius_t or abs(v-sv) > radius_v:
                     continue
                 line_distances.append((abs(v-sv), sensor, st, sv))
             except StopIteration:
                 pass
-        if not line_distances:
-            return (None, None, None)
-        (distance, sensor, time, value) = sorted(line_distances, key=lambda a: a[0])[0]
-        return sensor, time, value
+        if multiple:
+            return sorted(line_distances, key=lambda a: a[0])
+        else:
+            if not line_distances:
+                return (None, None, None)
+            (distance, sensor, time, value) = sorted(line_distances, key=lambda a: a[0])[0]
+            return sensor, time, value
         
     def on_motion(self, ctrl, x, y):
-        (sensor, time, value) = self.get_info_at_coord(x, y)
-        if sensor:
-            self.set_tooltip_text("{} {}{}".format(sensor.name, value, Unit(sensor.unit)))
-            self._pointer = (time, sensor, value)
+        sensors = self.get_info_at_coord(x, y, multiple=True)
+        if sensors:
+            self.set_tooltip_text("\n".join(
+                ["{}/{} {}{}".format(sensor.device.name, sensor.name, value, Unit(sensor.unit)) 
+                 for (_, sensor, _, value) in sensors]))
         else:
             self.set_tooltip_text(None)
 
