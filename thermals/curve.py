@@ -85,7 +85,7 @@ class Curve(Gtk.DrawingArea):
         _, hovering = hovering
         if hovering != self.drawHandlesCurrent:
             self.drawHandlesCurrent = hovering
-            self.set_tooltip_text("{}{} {}{}".format(hovering[0], self.x_unit, hovering[1], self.y_unit))
+            self.set_tooltip_text("{} {}".format(self.x_unit.format_value(hovering[0]), self.y_unit.format_value(hovering[1])))
             self.queue_draw()
 
     def drag_begin(self, _, w, h):
@@ -173,7 +173,7 @@ class Curve(Gtk.DrawingArea):
             c.set_line_width(1)
             c.set_dash([5, 10], 5)
             c.move_to(0, self.yh(line))
-            c.show_text("{} {}".format(line, self.y_unit))
+            c.show_text(self.y_unit.format_value(line))
             c.line_to(width, self.yh(line))
             c.stroke()
         c.set_dash([])

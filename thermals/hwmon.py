@@ -204,7 +204,7 @@ class HwmonSensor(Sensor):
             pass
     
     def format_valueStr(self):
-        self.valueStr = self.format()
+        self.valueStr = Unit(self.unit).format_value(self.value)
     
     def has_configuration(self):
         return False
@@ -217,9 +217,6 @@ class Temperature(HwmonSensor):
         #     os.path.join(self.device.dir, self.measurement + "_input")))
         return readGio(os.path.join(self.device.dir, self.measurement + "_input"),
                        func = convertTemp)()
-    
-    def format(self):
-        return "{:.1f}{}".format(self.value, Unit(self.unit))
 
 class Fan(HwmonSensor):
     unit = Unit.RPM.value
@@ -229,9 +226,6 @@ class Fan(HwmonSensor):
         #     os.path.join(self.device.dir, self.measurement + "_input")))
         return readGio(os.path.join(self.device.dir, self.measurement + "_input"),
                        func = int)()
-    
-    def format(self):
-        return "{} {}".format(self.value, Unit(self.unit))
 
 class Pwm(HwmonSensor):
     unit = Unit.PWM.value
@@ -240,9 +234,6 @@ class Pwm(HwmonSensor):
         #     os.path.join(self.device.dir, self.measurement)))
         return readGio(os.path.join(self.device.dir, self.measurement), func = int)()
     
-    def format(self):
-        return "{}{}".format(self.value, Unit(self.unit))
-
     def has_configuration(self):
         full_path = os.path.join(self.device.dir, self.measurement)
         path_enable = full_path + "_enable"
@@ -267,8 +258,6 @@ class Power(HwmonSensor):
             return readGio(os.path.join(self.device.dir, self.measurement + "_average"), func = convertWatt)()
         else:
             return readGio(os.path.join(self.device.dir, self.measurement + "_input"), func = convertWatt)()
-    def format(self):
-        return "{}{}".format(self.value, Unit(self.unit))
 
 class Energy(HwmonSensor):
     # Energy reads energy counters in Joules.
@@ -296,8 +285,3 @@ class Energy(HwmonSensor):
             return
         self.previous_joules = current_joules
         return difference / dt
-
-    def format(self):
-        if self.value is None:
-            return ""
-        return "{:.1f}{}".format(self.value, Unit(self.unit))

@@ -7,13 +7,23 @@ class Measurement:
     time = None
     value = None
     sensor = None
+    count = 1
 
-    def create(sensor: Sensor, previous = None):
+    def create(sensor: Sensor):
         ms = Measurement()
         ms.time = sensor.time
         ms.value = sensor.value
         ms.sensor = sensor
         return ms
+    
+    def avg(self, value):
+        self.value = (self.value * self.count) + value
+        self.count += 1
+        self.value /= self.count
+        return self
+
+    def __add__(self, other):
+        return self.avg(other.value)
 
 class History:
     resolutions = [1, 3, 10, 30]
@@ -39,6 +49,6 @@ class History:
                     dq.append(measurement)
                 else:
                     if measurement.time - dq[-2].time <= res:
-                        dq[-1] = measurement
+                        dq[-1] += measurement
                     else:
                         dq.append(measurement)

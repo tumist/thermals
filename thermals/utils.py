@@ -33,6 +33,23 @@ class Unit(Enum):
             case Unit.CELCIUS: return 10
             case Unit.PWM: return 10
             case Unit.WATT: return 10
+    
+    def round(self, value):
+        match self:
+            case Unit.RPM: return round(value)
+            case Unit.CELCIUS: return round(value, 1)
+            case Unit.PWM: return round(value)
+            case Unit.WATT:
+                if value < 100: return round(value, 1)
+                else: return round(value)
+
+    def format_value(self, value):
+        if self == Unit.PWM:
+            return "{}%".format(round(value/2.55))
+        elif self == Unit.CELCIUS:
+            return "{}{}".format(self.round(value), self)
+        else:
+            return "{} {}".format(self.round(value), self)
 
 def readlineStrip(path: str) -> str:
     with open(path, 'r') as fd:

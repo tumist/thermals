@@ -178,9 +178,9 @@ class PlotCanvas(Gtk.Box):
         if self._value_min is None or self._value_max is None:
             self.title.set_markup("<b>{}</b>".format(self.unit.title()))
         else:
-            self.title.set_markup("<b>{}</b>  Min: {} {} Max: {} {}".format(
-                self.unit.title(), self._value_min, str(self.unit),
-                self._value_max, str(self.unit)))
+            self.title.set_markup("<b>{}</b>  Min: {} Max: {}".format(
+                self.unit.title(), self.unit.format_value(self._value_min),
+                self.unit.format_value(self._value_max)))
     
     def do_draw(self):
         #self._history_resolution = None
@@ -343,7 +343,7 @@ class PlotCanvas(Gtk.Box):
         sensors = self.get_info_at_coord(x, y, multiple=True)
         if sensors:
             self.set_tooltip_text("\n".join(
-                ["{}/{} {}{}".format(sensor.device.name, sensor.name, value, Unit(sensor.unit)) 
+                ["{}/{} {}".format(sensor.device.name, sensor.name, Unit(sensor.unit).format_value(value)) 
                  for (_, sensor, _, value) in sensors]))
         else:
             self.set_tooltip_text(None)
