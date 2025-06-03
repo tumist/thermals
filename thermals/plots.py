@@ -134,7 +134,7 @@ def values(seq):
 class PlotCanvas(Gtk.Box):
     darkStyle = GObject.Property(type=bool, default=False)
     plotSeconds = GObject.Property(type=int)
-    _history_resolution = 1
+    _history_resolution = None
     
     # These are the mins and max of values in this plot, updated by
     # `draw` or `scan_min_max`.
